@@ -13,4 +13,8 @@ impl BitMap {
             size: 0,
         }
     }
+
+    pub fn required_bytes(total_bytes: usize, slot_size: usize) -> usize {
+        (total_bytes / slot_size).div_ceil(BITS_PER_BYTE)
+    }
 }
