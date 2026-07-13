@@ -92,4 +92,13 @@ impl Pool {
             active_block: EMPTY_BLOCK.get_inner(),
         }
     }
+    pub fn align_up_unchecked(size: usize, align: usize) -> usize {
+        (size + align - 1) & !(align - 1)
+    }
+    pub fn align_up(size: usize, align: usize) -> Option<usize> {
+        match size.checked_add(align - 1) {
+            Some(s) => Some(s & !(align - 1)),
+            _ => panic!("OVERFLOW"),
+        }
+    }
 }
