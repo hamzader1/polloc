@@ -86,7 +86,7 @@ impl Pool {
         );
         // Validate the size
         let aligned_size = Self::align_up(max(size, size_of::<*mut u8>()), align)
-            .unwrap_or_else(|| panic!("SIZE OVERFLOW, TRY SMALLER SIZE"));
+            .unwrap_or_else(|| AllocErr::Overflow.panic());
         Self {
             freelist: FreeList::dangling(),
             slot_size: aligned_size,
