@@ -10,7 +10,7 @@ pub enum AllocErr {
 }
 
 impl AllocErr {
-    fn panic(self) -> ! {
+    pub fn panic(self) -> ! {
         panic!("{}", self.to_string())
     }
 }
