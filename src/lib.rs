@@ -43,3 +43,34 @@ impl EmptyBlockWrapper {
         &self.0 as *const Block as *mut Block
     }
 }
+impl Block {
+    pub fn new(
+        base: *mut u8,
+        size: usize,
+        hwm: *mut u8,
+        end: *mut u8,
+        prev: *mut Block,
+        bitmap: BitMap,
+    ) -> Self {
+        Self {
+            base,
+            size,
+            hwm,
+            end,
+            prev,
+            bitmap,
+        }
+    }
+    fn ptr(&self) -> *mut u8 {
+        self.base
+    }
+    fn size(&self) -> usize {
+        self.size
+    }
+    fn hwm(&self) -> *mut u8 {
+        self.hwm
+    }
+    fn prev(&self) -> *mut Block {
+        self.prev
+    }
+}
