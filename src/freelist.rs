@@ -30,7 +30,7 @@ impl FreeList {
     }
     unsafe fn get_slot_unchecked(&mut self) -> *mut u8 {
         let current = self.head;
-        // will case SegFault. this used in testing only
+        // will cause SegFault; used for testing only
         let next = *(self.head as *mut *mut u8);
         self.head = next as *mut u8;
         current
