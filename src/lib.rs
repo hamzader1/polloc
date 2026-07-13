@@ -139,7 +139,9 @@ impl Pool {
             Some(s) => s.max(aligned_size),
             _ => aligned_size,
         };
-        Ok(self.new_block(new_block_size)?)
+        self.new_block(new_block_size)?;
+        Ok(self.try_allocate_fast().unwrap())
+
         // Ok(null_mut())
     }
 
