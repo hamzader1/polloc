@@ -36,3 +36,10 @@ static EMPTY_BLOCK: EmptyBlockWrapper = EmptyBlockWrapper(Block {
     prev: null_mut(),
     bitmap: BitMap::dangling(),
 });
+
+unsafe impl Sync for EmptyBlockWrapper {}
+impl EmptyBlockWrapper {
+    fn get_inner(&self) -> *mut Block {
+        &self.0 as *const Block as *mut Block
+    }
+}
