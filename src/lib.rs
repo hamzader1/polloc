@@ -1,10 +1,12 @@
 #![allow(warnings)]
 mod bitmap;
+mod errors;
 mod freelist;
 mod platform;
 use bitmap::BitMap;
 use core::alloc::Layout;
 use core::cmp::max;
+use core::hash;
 use core::ptr::{self, null_mut};
 use freelist::FreeList;
 use platform::Platform;
