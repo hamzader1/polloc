@@ -94,6 +94,33 @@ impl Pool {
             active_block: EMPTY_BLOCK.get_inner(),
         }
     }
+    pub fn alloc(&mut self) -> *mut u8 {
+        self.try_allocate().unwrap_or_else(|err| err.panic())
+    }
+    pub fn try_allocate(&mut self) -> Result<*mut u8, AllocErr> {
+        if let Some(ptr) = self.try_allocate_fast() {
+            Ok(ptr)
+        } else {
+            Ok(self.try_allocate_slow()?)
+        }
+    }
+    pub fn try_allocate_fast(&mut self) -> Option<*mut u8> {
+        // First: check if there is any free slot
+        if let Some(slot) = self.freelist.get_slot() {
+            return Some(slot);
+        }
+        // Second: check HWM
+        let Block { hwm, end, .. } = unsafe { &mut *self.active_block };
+        if *hwm as usize + self.slot_size <= *end as usize {
+            let slot = *hwm;
+            *hwm = unsafe { (*hwm).add(self.slot_size) };
+            return Some(slot);
+        }
+
+        None
+    }
+
+    
     pub fn align_up_unchecked(size: usize, align: usize) -> usize {
         (size + align - 1) & !(align - 1)
     }
