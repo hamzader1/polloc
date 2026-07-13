@@ -1,3 +1,5 @@
+pub const BITS_PER_BYTE: usize = 8;
+
 #[derive(Debug)]
 pub(crate) struct BitMap {
     ptr: *mut u8,
