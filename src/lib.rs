@@ -26,3 +26,13 @@ pub struct Block {
     prev: *mut Block,
     bitmap: BitMap,
 }
+
+struct EmptyBlockWrapper(Block);
+static EMPTY_BLOCK: EmptyBlockWrapper = EmptyBlockWrapper(Block {
+    base: null_mut(),
+    size: 1,
+    hwm: null_mut(),
+    end: null_mut(),
+    prev: null_mut(),
+    bitmap: BitMap::dangling(),
+});
