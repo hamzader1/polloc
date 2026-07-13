@@ -90,7 +90,7 @@ impl Pool {
             align
         );
         // Validate the size
-        let aligned_size = Self::align_up(max(size, size_of::<*mut u8>()), align)
+        let aligned_size = Self::align_up(max(size, POINTER_SIZE), align)
             .unwrap_or_else(|| AllocErr::Overflow.panic());
         Self {
             freelist: FreeList::dangling(),
