@@ -106,7 +106,7 @@ impl Pool {
         if let Some(ptr) = self.try_allocate_fast() {
             Ok(ptr)
         } else {
-            Ok(self.try_allocate_slow()?)
+            self.try_allocate_slow()
         }
     }
     pub fn try_allocate_fast(&mut self) -> Option<*mut u8> {
