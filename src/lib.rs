@@ -74,3 +74,22 @@ impl Block {
         self.prev
     }
 }
+impl Pool {
+    pub fn new(size: usize, align: usize) -> Self {
+        // Validate the align is power of two
+        debug_assert!(
+            align.is_power_of_two(),
+            "alignment value:{} is not a power of two.",
+            align
+        );
+        // Validate the size
+        let aligned_size = Self::align_up(max(size, size_of::<*mut u8>()), align)
+            .unwrap_or_else(|| panic!("SIZE OVERFLOW, TRY SMALLER SIZE"));
+        Self {
+            freelist: FreeList::dangling(),
+            slot_size: aligned_size,
+            slot_align: align,
+            active_block: EMPTY_BLOCK.get_inner(),
+        }
+    }
+}
