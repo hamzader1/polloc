@@ -163,8 +163,9 @@ impl Pool {
             Ok(unsafe { ptr.add(header_bitmap_size) })
         }
     
-
-    
+        pub fn get_header_bitmap_size(&self, bitmap_size: usize) -> usize {
+            Self::align_up_unchecked(size_of::<Block>() + bitmap_size, self.slot_size)
+        } 
     pub fn align_up_unchecked(size: usize, align: usize) -> usize {
         (size + align - 1) & !(align - 1)
     }
