@@ -128,7 +128,7 @@ impl Pool {
         // everyhing is valid, align, size.
         // request memory and start making calculations
         let prev_size = unsafe { (*self.active_block).size() };
-        let mut aligned_size = unsafe {
+        let aligned_size = {
             match Self::align_up(prev_size, Platform::get_page_size()) {
                 Some(size) => size,
                 None => return Err(AllocErr::Overflow),
