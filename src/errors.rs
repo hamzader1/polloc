@@ -9,6 +9,11 @@ pub enum AllocErr {
     DoubleFree,
 }
 
+impl AllocErr {
+    fn panic(self) -> ! {
+        panic!("{}", self.to_string())
+    }
+}
 impl fmt::Display for AllocErr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
