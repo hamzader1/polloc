@@ -8,8 +8,13 @@ use core::alloc::Layout;
 use core::cmp::max;
 use core::hash;
 use core::ptr::{self, null_mut};
+use errors::AllocErr;
 use freelist::FreeList;
 use platform::Platform;
+use std::ptr::null;
+
+const POINTER_SIZE: usize = size_of::<*mut u8>();
+const MUL_CONSTANT: usize = 2;
 
 #[derive(Debug)]
 pub struct Pool {
@@ -120,59 +125,59 @@ impl Pool {
         None
     }
     pub fn try_allocate_slow(&mut self) -> Result<*mut u8, AllocErr> {
-            // everyhing is valid, align, size.
-            // request memory and start making calculations
-            let prev_size = unsafe { (*self.active_block).size() };
-            let mut aligned_size = unsafe {
-                match Self::align_up(prev_size, Platform::get_page_size()) {
-                    Some(size) => size,
-                    None => return Err(AllocErr::Overflow),
-                }
-            };
-    
-            let new_block_size: usize = match prev_size.checked_mul(MUL_CONSTANT) {
-                Some(s) => s.max(aligned_size),
-                _ => aligned_size,
-            };
-            Ok(self.new_block(new_block_size)?)
-            // Ok(null_mut())
-        }
-    
-        pub fn new_block(&mut self, new_block_size: usize) -> Result<*mut u8, AllocErr> {
-            let ptr: *mut u8 = Platform::mmap(new_block_size);
-            if ptr.is_null() {
-                return Err(AllocErr::OutOfMemory);
+        // everyhing is valid, align, size.
+        // request memory and start making calculations
+        let prev_size = unsafe { (*self.active_block).size() };
+        let mut aligned_size = unsafe {
+            match Self::align_up(prev_size, Platform::get_page_size()) {
+                Some(size) => size,
+                None => return Err(AllocErr::Overflow),
             }
-            let remaining_bytes = new_block_size - size_of::<Block>();
-            let bitmap_size = BitMap::required_bytes(remaining_bytes, self.slot_size);
-            let header_bitmap_size = self.get_header_bitmap_size(bitmap_size);
-            let mut new_block = unsafe {
-                Block::new(
-                    ptr,
-                    new_block_size,
-                    ptr.add(header_bitmap_size),
-                    ptr.add(new_block_size),
-                    self.active_block,
-                    BitMap::new(ptr.add(size_of::<Block>()), bitmap_size),
-                )
-            };
-            unsafe {
-                (ptr as *mut Block).write(new_block);
-            }
-            self.active_block = ptr as *mut Block;
-            Ok(unsafe { ptr.add(header_bitmap_size) })
+        };
+
+        let new_block_size: usize = match prev_size.checked_mul(MUL_CONSTANT) {
+            Some(s) => s.max(aligned_size),
+            _ => aligned_size,
+        };
+        Ok(self.new_block(new_block_size)?)
+        // Ok(null_mut())
+    }
+
+    pub fn new_block(&mut self, new_block_size: usize) -> Result<*mut u8, AllocErr> {
+        let ptr: *mut u8 = Platform::mmap(new_block_size);
+        if ptr.is_null() {
+            return Err(AllocErr::OutOfMemory);
         }
-    
-        pub fn get_header_bitmap_size(&self, bitmap_size: usize) -> usize {
-            Self::align_up_unchecked(size_of::<Block>() + bitmap_size, self.slot_size)
-        } 
+        let remaining_bytes = new_block_size - size_of::<Block>();
+        let bitmap_size = BitMap::required_bytes(remaining_bytes, self.slot_size);
+        let header_bitmap_size = self.get_header_bitmap_size(bitmap_size);
+        let mut new_block = unsafe {
+            Block::new(
+                ptr,
+                new_block_size,
+                ptr.add(header_bitmap_size),
+                ptr.add(new_block_size),
+                self.active_block,
+                BitMap::new(ptr.add(size_of::<Block>()), bitmap_size),
+            )
+        };
+        unsafe {
+            (ptr as *mut Block).write(new_block);
+        }
+        self.active_block = ptr as *mut Block;
+        Ok(unsafe { ptr.add(header_bitmap_size) })
+    }
+
+    pub fn get_header_bitmap_size(&self, bitmap_size: usize) -> usize {
+        Self::align_up_unchecked(size_of::<Block>() + bitmap_size, self.slot_size)
+    }
     pub fn align_up_unchecked(size: usize, align: usize) -> usize {
         (size + align - 1) & !(align - 1)
     }
     pub fn align_up(size: usize, align: usize) -> Option<usize> {
         match size.checked_add(align - 1) {
             Some(s) => Some(s & !(align - 1)),
-            _ => panic!("OVERFLOW"),
+            _ => None,
         }
     }
 }
