@@ -202,5 +202,41 @@ impl Pool {
         if ptr.is_null() || ptr > unsafe { &*self.active_block }.hwm {
             return null_mut();
         }
+        let mut current = self.active_block;
+        while current != EMPTY_BLOCK.get_inner() {
+            let block = unsafe { &*current };
+            let region_start_ptr = self.get_first_block_ptr(block);
+            if ptr >= region_start_ptr && ptr < block.hwm {
+                return current;
+            }
+            current = block.prev;
+        }
+
+        null_mut()
+    }
+    // unsafe to call unless the ptr is garentueed to be inside the region
+    pub fn get_slot_index(&self, ptr: *mut u8, block: &Block) -> usize {
+        let first_block = self.get_first_block_ptr(block) as usize;
+        assert!((ptr as usize - first_block) % self.slot_size == 0);
+        ((ptr as usize) - (first_block)) / self.slot_size
+    }
+
+    pub fn free(&mut self, ptr: *mut u8) {
+        // is the pointer valid
+        // is the pointer valid for future use
+        let block_ptr = self.get_block(ptr);
+        // TODO: INVALID POINTER
+        if block_ptr.is_null() {
+            AllocErr::InvalidPointer.panic()
+        }
+        let block = unsafe { &mut *block_ptr };
+        // VALIDATE IF THE SLOT IS TRULLY FREE OR DOUBLE FREE DETECTED
+        let slot_index = self.get_slot_index(ptr, block);
+        let (is_slot_free, cached_byte) = block.bitmap.is_free(slot_index);
+        if is_slot_free {
+            AllocErr::DoubleFree.panic()
+        }
+        block.bitmap.clear(slot_index, Some(cached_byte));
+        self.freelist.add_slot(ptr);
     }
 }
