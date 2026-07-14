@@ -86,9 +86,13 @@ impl Pool {
             "alignment value:{} is not a power of two.",
             align
         );
+        let align = max(align, POINTER_ALIGN);
+
+        let size = max(size, POINTER_SIZE);
         // Validate the size
-        let aligned_size = Self::align_up(max(size, POINTER_SIZE), align)
-            .unwrap_or_else(|| AllocErr::Overflow.panic());
+        let aligned_size =
+            Self::align_up(size, align).unwrap_or_else(|| AllocErr::Overflow.panic());
+        dbg!(size, align, aligned_size);
         Self {
             freelist: FreeList::dangling(),
             slot_size: aligned_size,
