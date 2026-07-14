@@ -5,3 +5,9 @@ edition = "2024"
 
 [dependencies]
 libc = "0.2.186"
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "pool_bench"
+harness = false
