@@ -28,9 +28,6 @@ pub type DefaultBlockSource = LibcBlockSource;
 
 
 #[cfg(windows)]
-use crate::platform::WindowsBlockSource;
-
-#[cfg(windows)]
 pub type DefaultBlockSource = WindowsBlockSource;
 
 #[derive(Debug)]
@@ -123,7 +120,6 @@ impl<S: BlockSource> Pool<S> {
         let align = max(align, POINTER_ALIGN);
 
         let size = max(size, POINTER_SIZE);
-        // Validate the size
         let aligned_size =
             Self::align_up(size, align).unwrap_or_else(|| AllocErr::Overflow.panic());
         Self {
