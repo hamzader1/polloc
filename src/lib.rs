@@ -215,7 +215,7 @@ impl Pool {
     // unsafe: only valid when pointer lies within the region
     fn get_slot_index(&self, ptr: *mut u8, block: &Block) -> usize {
         let first_block = self.get_first_block_ptr(block) as usize;
-        assert_eq!(
+        debug_assert_eq!(
             (ptr as usize - first_block) % self.slot_size,
             0,
             "{}",
