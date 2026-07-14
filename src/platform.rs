@@ -23,14 +23,12 @@ const PROT: c_int = PROT_READ | PROT_WRITE;
 const FD: c_int = -1;
 const OFFSET: off_t = 0;
 
-/// Thin wrapper around operating-system memory mapping calls.
-pub struct Platform;
-impl Platform {
-    /// Returns the system page size in bytes.
-    ///
-    /// Arena block sizes are rounded to this value so every block request is
-    /// page-sized from the operating system's point of view.
-    pub fn get_page_size() -> usize {
+#[cfg(unix)]
+pub struct LibcBlockSource;
+
+#[cfg(unix)]
+impl BlockSource for LibcBlockSource {
+    fn page_size(&self) -> usize {
         unsafe { sysconf(_SC_PAGE_SIZE) as usize }
     }
 
