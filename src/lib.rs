@@ -202,7 +202,7 @@ impl Pool {
     }
 
     fn get_block(&self, ptr: *mut u8) -> *mut Block {
-        if ptr.is_null() || ptr > unsafe { &*self.active_block }.hwm {
+        if ptr.is_null() {
             return null_mut();
         }
         let mut current = self.active_block;
