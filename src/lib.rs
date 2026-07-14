@@ -25,6 +25,11 @@ const MUL_CONSTANT: usize = 2;
 #[cfg(unix)]
 pub type DefaultBlockSource = LibcBlockSource;
 
+
+
+#[cfg(windows)]
+use crate::platform::WindowsBlockSource;
+
 #[cfg(windows)]
 pub type DefaultBlockSource = WindowsBlockSource;
 
