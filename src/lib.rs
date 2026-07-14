@@ -3,7 +3,12 @@ mod bitmap;
 mod errors;
 mod freelist;
 mod platform;
+#[cfg(test)]
 mod tests;
+#[cfg(unix)]
+use crate::platform::LibcBlockSource;
+#[cfg(windows)]
+use crate::platform::WindowsBlockSource;
 use bitmap::BitMap;
 use core::cmp::max;
 use core::ptr::null_mut;
