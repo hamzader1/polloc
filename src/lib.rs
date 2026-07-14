@@ -3,6 +3,7 @@ mod bitmap;
 mod errors;
 mod freelist;
 mod platform;
+mod tests;
 use bitmap::BitMap;
 use core::cmp::max;
 use core::ptr::null_mut;
@@ -93,7 +94,6 @@ impl Pool {
         // Validate the size
         let aligned_size =
             Self::align_up(size, align).unwrap_or_else(|| AllocErr::Overflow.panic());
-        dbg!(size, align, aligned_size);
         Self {
             freelist: FreeList::dangling(),
             slot_size: aligned_size,
@@ -137,7 +137,6 @@ impl Pool {
 
                 return Some(slot);
             }
-            return Some(slot);
         }
 
         None
