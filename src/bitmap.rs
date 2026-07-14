@@ -30,11 +30,13 @@ impl BitMap {
         let byte = unsafe { core::ptr::read(byte_ptr) };
         (byte & (1 << offset) == 0, (byte_ptr, offset))
     }
+
     pub(crate) fn set(&mut self, idx: usize, cached_byte: Option<(*mut u8, u8)>) {
         if let Some((byte_ptr, offset)) = cached_byte {
             let byte = unsafe { core::ptr::read(byte_ptr) };
             let new_byte = byte | (1 << offset);
             unsafe { core::ptr::write(byte_ptr, new_byte) };
+            return;
         }
         // IN CASE WE DON'T HAVE PRE-COMPUTED RESULTS
         let (byte_ptr, offset) = self.get_byte_ptr(idx);
@@ -47,8 +49,8 @@ impl BitMap {
             let byte = unsafe { core::ptr::read(byte_ptr) };
             let new_byte = byte & !(1 << offset);
             unsafe { core::ptr::write(byte_ptr, new_byte) };
+            return;
         }
-        // IN CASE WE DON'T HAVE PRE-COMPUTED RESULTS
         let (byte_ptr, offset) = self.get_byte_ptr(idx);
         let byte = unsafe { core::ptr::read(byte_ptr) };
 
