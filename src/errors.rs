@@ -8,6 +8,7 @@ pub enum AllocErr {
     InvalidAlignment,
     DoubleFree,
     InvalidPointer,
+    MisalignedFree,
 }
 
 impl AllocErr {
@@ -35,6 +36,9 @@ impl fmt::Display for AllocErr {
                     f,
                     "free() called with a pointer that is not owned by this pool"
                 )
+            }
+            AllocErr::MisalignedFree => {
+                write!(f, "free() called with a misaligned pointer")
             }
         }
     }
