@@ -99,14 +99,14 @@ impl Pool {
     pub fn alloc(&mut self) -> *mut u8 {
         self.try_allocate().unwrap_or_else(|err| err.panic())
     }
-    pub fn try_allocate(&mut self) -> Result<*mut u8, AllocErr> {
+    fn try_allocate(&mut self) -> Result<*mut u8, AllocErr> {
         if let Some(ptr) = self.try_allocate_fast() {
             Ok(ptr)
         } else {
             self.try_allocate_slow()
         }
     }
-    pub fn try_allocate_fast(&mut self) -> Option<*mut u8> {
+    fn try_allocate_fast(&mut self) -> Option<*mut u8> {
         // First: check if there is any free slot
         if let Some(slot) = self.freelist.get_slot() {
             unsafe {
@@ -129,7 +129,7 @@ impl Pool {
 
         None
     }
-    pub fn try_allocate_slow(&mut self) -> Result<*mut u8, AllocErr> {
+    fn try_allocate_slow(&mut self) -> Result<*mut u8, AllocErr> {
         // everyhing is valid, align, size.
         // request memory and start making calculations
         let prev_size = unsafe { (*self.active_block).size() };
@@ -150,7 +150,7 @@ impl Pool {
         // Ok(null_mut())
     }
 
-    pub fn new_block(&mut self, new_block_size: usize) -> Result<(), AllocErr> {
+    fn new_block(&mut self, new_block_size: usize) -> Result<(), AllocErr> {
         let ptr: *mut u8 = Platform::mmap(new_block_size);
         if ptr.is_null() {
             return Err(AllocErr::OutOfMemory);
@@ -176,19 +176,19 @@ impl Pool {
         // Ok(unsafe { ptr.add(header_bitmap_size) })
     }
 
-    pub fn get_first_block_ptr(&self, block: &Block) -> *mut u8 {
+    fn get_first_block_ptr(&self, block: &Block) -> *mut u8 {
         let Block { base, bitmap, .. } = block; // generally
 
         let offset = Self::align_up_unchecked(size_of::<Block>() + bitmap.size, self.slot_size);
         unsafe { base.add(offset) }
     }
-    pub fn get_header_bitmap_size(&self, bitmap_size: usize) -> usize {
+    fn get_header_bitmap_size(&self, bitmap_size: usize) -> usize {
         Self::align_up_unchecked(size_of::<Block>() + bitmap_size, self.slot_size)
     }
-    pub fn align_up_unchecked(size: usize, align: usize) -> usize {
+    fn align_up_unchecked(size: usize, align: usize) -> usize {
         (size + align - 1) & !(align - 1)
     }
-    pub fn align_up(size: usize, align: usize) -> Option<usize> {
+    fn align_up(size: usize, align: usize) -> Option<usize> {
         size.checked_add(align - 1).map(|res| res & !(align - 1))
         //     match size.checked_add(align - 1) {
         //         Some(s) => Some(s & !(align - 1)),
@@ -196,7 +196,7 @@ impl Pool {
         //     }
     }
 
-    pub fn get_block(&self, ptr: *mut u8) -> *mut Block {
+    fn get_block(&self, ptr: *mut u8) -> *mut Block {
         if ptr.is_null() || ptr > unsafe { &*self.active_block }.hwm {
             return null_mut();
         }
@@ -212,30 +212,37 @@ impl Pool {
 
         null_mut()
     }
-    // unsafe to call unless the ptr is garentueed to be inside the region
-    pub fn get_slot_index(&self, ptr: *mut u8, block: &Block) -> usize {
+    // unsafe: only valid when pointer lies within the region
+    fn get_slot_index(&self, ptr: *mut u8, block: &Block) -> usize {
         let first_block = self.get_first_block_ptr(block) as usize;
-        assert!((ptr as usize - first_block) % self.slot_size == 0);
+        assert_eq!(
+            (ptr as usize - first_block) % self.slot_size,
+            0,
+            "{}",
+            AllocErr::MisalignedFree.panic()
+        );
         ((ptr as usize) - (first_block)) / self.slot_size
     }
 
     pub fn free(&mut self, ptr: *mut u8) {
-        // is the pointer valid
+        self.try_free(ptr).map_err(|err| err.panic());
+    }
+    fn try_free(&mut self, ptr: *mut u8) -> Result<(), AllocErr> {
         // is the pointer valid for future use
         let block_ptr = self.get_block(ptr);
-        // TODO: INVALID POINTER
         if block_ptr.is_null() {
-            AllocErr::InvalidPointer.panic()
+            return Err(AllocErr::InvalidPointer);
         }
         let block = unsafe { &mut *block_ptr };
-        // VALIDATE IF THE SLOT IS TRULLY FREE OR DOUBLE FREE DETECTED
+        // safety: ensure the slot is free; detect double free
         let slot_index = self.get_slot_index(ptr, block);
         let (is_slot_free, cached_byte) = block.bitmap.is_free(slot_index);
         if is_slot_free {
-            AllocErr::DoubleFree.panic()
+            return Err(AllocErr::DoubleFree);
         }
         block.bitmap.clear(slot_index, Some(cached_byte));
         self.freelist.add_slot(ptr);
+        Ok(())
     }
 }
 
