@@ -11,3 +11,7 @@ criterion = "0.5"
 [[bench]]
 name = "pool_bench"
 harness = false
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.58"
+features = ["Win32_System_Memory", "Win32_Foundation", "Win32_System_SystemInformation"]
