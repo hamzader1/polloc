@@ -11,6 +11,7 @@ use freelist::FreeList;
 use platform::Platform;
 
 const POINTER_SIZE: usize = size_of::<*mut u8>();
+const POINTER_ALIGN: usize = align_of::<*mut u8>();
 const MUL_CONSTANT: usize = 2;
 
 #[derive(Debug)]
