@@ -7,6 +7,7 @@ pub enum AllocErr {
     OutOfMemory,
     InvalidAlignment,
     DoubleFree,
+    InvalidPointer,
 }
 
 impl AllocErr {
@@ -28,6 +29,12 @@ impl fmt::Display for AllocErr {
             }
             AllocErr::DoubleFree => {
                 write!(f, "attempted to free memory more than once")
+            }
+            AllocErr::InvalidPointer => {
+                write!(
+                    f,
+                    "free() called with a pointer that is not owned by this pool"
+                )
             }
         }
     }
