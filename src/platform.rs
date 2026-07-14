@@ -18,6 +18,23 @@ use libc::MAP_PRIVATE;
 use libc::PROT_READ;
 use libc::PROT_WRITE;
 
+#[cfg(unix)]
+use core::ptr::null_mut;
+#[cfg(windows)]
+use core::ffi::c_void;
+#[cfg(unix)]
+use libc::{
+    c_int, c_void, munmap, off_t, sysconf, MAP_ANONYMOUS, MAP_FAILED, MAP_PRIVATE, PROT_READ,
+    PROT_WRITE, _SC_PAGE_SIZE,
+};
+#[cfg(windows)]
+use windows::Win32::System::Memory::{
+    VirtualAlloc, VirtualFree, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
+};
+#[cfg(windows)]
+use windows::Win32::System::SystemInformation::GetSystemInfo;
+
+#[cfg(unix)]
 const FLAG: c_int = MAP_PRIVATE | MAP_ANONYMOUS;
 const PROT: c_int = PROT_READ | PROT_WRITE;
 const FD: c_int = -1;
@@ -32,13 +49,7 @@ impl BlockSource for LibcBlockSource {
         unsafe { sysconf(_SC_PAGE_SIZE) as usize }
     }
 
-    /// Maps `size` bytes of readable and writable anonymous memory.
-    ///
-    /// The mapping is private to this process and is not backed by a file. On
-    /// success, the returned pointer is the base address of the mapping. On
-    /// failure, this wrapper returns null even though the raw POSIX failure
-    /// value is `MAP_FAILED`.
-    pub fn mmap(size: usize) -> *mut u8 {
+    fn map(&mut self, size: usize) -> *mut u8 {
         unsafe {
             let ptr = libc::mmap(null_mut(), size, PROT, FLAG, FD, OFFSET);
             if ptr == MAP_FAILED {
@@ -49,11 +60,7 @@ impl BlockSource for LibcBlockSource {
         }
     }
 
-    /// Unmaps a memory region previously returned by `mmap`.
-    ///
-    /// `addr` must be the mapping base address and `size` must match the mapped
-    /// region size used when the block was created.
-    pub fn munmap<T>(addr: *mut T, size: usize) {
+    fn unmap(&mut self, addr: *mut u8, size: usize) {
         unsafe {
             munmap(addr as *mut c_void, size);
         }
