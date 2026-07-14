@@ -59,3 +59,28 @@ impl BlockSource for LibcBlockSource {
         }
     }
 }
+
+#[cfg(windows)]
+pub struct WindowsBlockSource;
+#[cfg(windows)]
+impl BlockSource for WindowsBlockSource {
+    fn map(&mut self, size: usize) -> *mut u8 {
+        unsafe {
+            VirtualAlloc(None, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) as *mut u8
+        }
+    }
+
+    fn unmap(&mut self, ptr: *mut u8, _size: usize) {
+        unsafe {
+            let _ = VirtualFree(ptr as *mut c_void, 0, MEM_RELEASE);
+        }
+    }
+
+    fn page_size(&self) -> usize {
+        unsafe {
+            let mut info = std::mem::zeroed();
+            GetSystemInfo(&mut info);
+            info.dwPageSize as usize
+        }
+    }
+}
