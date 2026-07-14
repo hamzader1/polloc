@@ -25,12 +25,12 @@ impl BitMap {
         unsafe { (self.ptr.add(byte_index), byte_offset as u8) }
         // 0
     }
-    pub fn is_free(&self, idx: usize) -> (bool, (*mut u8, u8)) {
+    pub(crate) fn is_free(&self, idx: usize) -> (bool, (*mut u8, u8)) {
         let (byte_ptr, offset) = self.get_byte_ptr(idx);
         let byte = unsafe { core::ptr::read(byte_ptr) };
         (byte & (1 << offset) == 0, (byte_ptr, offset))
     }
-    pub fn set(&mut self, idx: usize, cached_byte: Option<(*mut u8, u8)>) {
+    pub(crate) fn set(&mut self, idx: usize, cached_byte: Option<(*mut u8, u8)>) {
         if let Some((byte_ptr, offset)) = cached_byte {
             let byte = unsafe { core::ptr::read(byte_ptr) };
             let new_byte = byte | (1 << offset);
@@ -42,7 +42,7 @@ impl BitMap {
         let new_byte = byte | (1 << offset);
         unsafe { core::ptr::write(byte_ptr, new_byte) };
     }
-    pub fn clear(&mut self, idx: usize, cached_byte: Option<(*mut u8, u8)>) {
+    pub(crate) fn clear(&mut self, idx: usize, cached_byte: Option<(*mut u8, u8)>) {
         if let Some((byte_ptr, offset)) = cached_byte {
             let byte = unsafe { core::ptr::read(byte_ptr) };
             let new_byte = byte & !(1 << offset);
