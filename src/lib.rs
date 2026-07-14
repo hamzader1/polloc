@@ -239,4 +239,14 @@ impl Pool {
     }
 }
 
-// EMPTY
+impl Drop for Pool {
+    fn drop(&mut self) {
+        unsafe {
+            while self.active_block != EMPTY_BLOCK.get_inner() {
+                let current = &*self.active_block;
+                self.active_block = current.prev;
+                Platform::munmap(current.base, current.size);
+            }
+        }
+    }
+}
