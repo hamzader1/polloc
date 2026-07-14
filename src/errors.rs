@@ -1,5 +1,5 @@
-use std::error::Error;
-use std::fmt;
+use core::error::Error;
+use core::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AllocErr {
