@@ -1,22 +1,4 @@
-///
-///
-/// This module isolates the operating-system interface from the allocator
-/// logic. The arena asks for anonymous private memory mappings through `mmap`
-/// and releases them with `munmap`. Keeping this behind `Platform` makes the
-/// allocator core independent from the exact platform API and leaves room for a
-/// future Windows implementation using a different backend.
-use core::ptr::null_mut;
-use libc::c_int;
-use libc::c_void;
-use libc::munmap;
-use libc::off_t;
-use libc::sysconf;
-use libc::_SC_PAGE_SIZE;
-use libc::MAP_ANONYMOUS;
-use libc::MAP_FAILED;
-use libc::MAP_PRIVATE;
-use libc::PROT_READ;
-use libc::PROT_WRITE;
+use crate::block_source::BlockSource;
 
 #[cfg(unix)]
 use core::ptr::null_mut;
@@ -36,8 +18,11 @@ use windows::Win32::System::SystemInformation::GetSystemInfo;
 
 #[cfg(unix)]
 const FLAG: c_int = MAP_PRIVATE | MAP_ANONYMOUS;
+#[cfg(unix)]
 const PROT: c_int = PROT_READ | PROT_WRITE;
+#[cfg(unix)]
 const FD: c_int = -1;
+#[cfg(unix)]
 const OFFSET: off_t = 0;
 
 #[cfg(unix)]
