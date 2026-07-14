@@ -116,19 +116,26 @@ impl Pool {
         if let Some(slot) = self.freelist.get_slot() {
             unsafe {
                 let block = &mut *self.get_block(slot);
-                let slot_index = self.get_slot_index(slot, &*self.get_block(slot));
+                let slot_index = self.get_slot_index(slot, block);
                 (block).bitmap.set(slot_index, None);
             }
             return Some(slot);
         }
         // Second: check HWM
-        let Block { hwm, end, .. } = unsafe { &mut *self.active_block };
-        if *hwm as usize + self.slot_size <= *end as usize {
-            let slot = *hwm;
-            unsafe {
-                let slot_index = self.get_slot_index(slot, &*self.active_block);
-                (*self.active_block).bitmap.set(slot_index, None);
-                *hwm = (*hwm).add(self.slot_size);
+        unsafe {
+            let block = self.active_block;
+
+            let hwm = (*block).hwm;
+            let end = (*block).end;
+
+            if hwm as usize + self.slot_size <= end as usize {
+                let slot = hwm;
+                let slot_index = self.get_slot_index(slot, &*block);
+
+                (*block).bitmap.set(slot_index, None);
+                (*block).hwm = hwm.add(self.slot_size);
+
+                return Some(slot);
             }
             return Some(slot);
         }
