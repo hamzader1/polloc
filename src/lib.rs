@@ -191,9 +191,16 @@ impl Pool {
         (size + align - 1) & !(align - 1)
     }
     pub fn align_up(size: usize, align: usize) -> Option<usize> {
-        match size.checked_add(align - 1) {
-            Some(s) => Some(s & !(align - 1)),
-            _ => None,
+        size.checked_add(align - 1).map(|res| res & !(align - 1))
+        //     match size.checked_add(align - 1) {
+        //         Some(s) => Some(s & !(align - 1)),
+        //         _ => None,
+        //     }
+    }
+
+    pub fn get_block(&self, ptr: *mut u8) -> *mut Block {
+        if ptr.is_null() || ptr > unsafe { &*self.active_block }.hwm {
+            return null_mut();
         }
     }
 }
