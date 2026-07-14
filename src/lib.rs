@@ -174,7 +174,7 @@ impl<S: BlockSource> Pool<S> {
         // request memory and start making calculations
         let prev_size = unsafe { (*self.active_block).size() };
         let aligned_size = {
-            match Self::align_up(prev_size, Platform::get_page_size()) {
+            match Self::align_up(prev_size, self.source.page_size()) {
                 Some(size) => size,
                 None => return Err(AllocErr::Overflow),
             }
@@ -191,7 +191,7 @@ impl<S: BlockSource> Pool<S> {
     }
 
     fn new_block(&mut self, new_block_size: usize) -> Result<(), AllocErr> {
-        let ptr: *mut u8 = Platform::mmap(new_block_size);
+        let ptr: *mut u8 = self.source.map(new_block_size);
         if ptr.is_null() {
             return Err(AllocErr::OutOfMemory);
         }
@@ -286,12 +286,12 @@ impl<S: BlockSource> Pool<S> {
     }
 }
 
-impl Drop for Pool {
+impl<S: BlockSource> Drop for Pool<S> {
     fn drop(&mut self) {
         while self.active_block != EMPTY_BLOCK.get_inner() {
             let current = unsafe { &*self.active_block };
             self.active_block = current.prev;
-            Platform::munmap(current.base, current.size);
+            self.source.unmap(current.base as *mut u8, current.size);
         }
     }
 }
