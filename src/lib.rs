@@ -112,13 +112,21 @@ impl Pool {
     pub fn try_allocate_fast(&mut self) -> Option<*mut u8> {
         // First: check if there is any free slot
         if let Some(slot) = self.freelist.get_slot() {
+            unsafe {
+                let slot_index = self.get_slot_index(slot, &*self.active_block);
+                (*self.active_block).bitmap.set(slot_index, None);
+            }
             return Some(slot);
         }
         // Second: check HWM
         let Block { hwm, end, .. } = unsafe { &mut *self.active_block };
         if *hwm as usize + self.slot_size <= *end as usize {
             let slot = *hwm;
-            *hwm = unsafe { (*hwm).add(self.slot_size) };
+            unsafe {
+                let slot_index = self.get_slot_index(slot, &*self.active_block);
+                (*self.active_block).bitmap.set(slot_index, None);
+                *hwm = (*hwm).add(self.slot_size);
+            }
             return Some(slot);
         }
 
