@@ -178,6 +178,12 @@ impl Pool {
         Ok(unsafe { ptr.add(header_bitmap_size) })
     }
 
+    pub fn get_first_block_ptr(&self, block: &Block) -> *mut u8 {
+        let Block { base, bitmap, .. } = block; // generally
+
+        let offset = Self::align_up_unchecked(size_of::<Block>() + bitmap.size, self.slot_size);
+        unsafe { base.add(offset) }
+    }
     pub fn get_header_bitmap_size(&self, bitmap_size: usize) -> usize {
         Self::align_up_unchecked(size_of::<Block>() + bitmap_size, self.slot_size)
     }
