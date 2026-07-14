@@ -9,7 +9,9 @@ use core::cmp::max;
 use core::ptr::null_mut;
 use errors::AllocErr;
 use freelist::FreeList;
-use platform::Platform;
+
+pub mod block_source;
+pub use block_source::BlockSource;
 
 const POINTER_SIZE: usize = size_of::<*mut u8>();
 const POINTER_ALIGN: usize = align_of::<*mut u8>();
@@ -27,6 +29,7 @@ pub struct Pool {
     pub slot_size: usize,
     pub slot_align: usize,
     pub active_block: *mut Block,
+    source: S,
 }
 
 #[derive(Debug)]
@@ -86,9 +89,22 @@ impl Block {
         self.prev
     }
 }
-impl Pool {
+#[cfg(unix)]
+impl Pool<LibcBlockSource> {
     pub fn new(size: usize, align: usize) -> Self {
-        // Validate the align is power of two
+        Self::with_source(size, align, LibcBlockSource)
+    }
+}
+
+#[cfg(windows)]
+impl Pool<WindowsBlockSource> {
+    pub fn new(size: usize, align: usize) -> Self {
+        Self::with_source(size, align, WindowsBlockSource)
+    }
+}
+
+impl<S: BlockSource> Pool<S> {
+    fn with_source(size: usize, align: usize, source: S) -> Self {
         debug_assert!(
             align.is_power_of_two(),
             "alignment value:{} is not a power of two.",
@@ -105,6 +121,7 @@ impl Pool {
             slot_size: aligned_size,
             slot_align: align,
             active_block: EMPTY_BLOCK.get_inner(),
+            source,
         }
     }
     pub fn alloc(&mut self) -> *mut u8 {
