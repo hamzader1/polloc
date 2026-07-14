@@ -35,4 +35,10 @@ impl FreeList {
         self.head = next as *mut u8;
         current
     }
+    pub fn add_slot(&mut self, ptr: *mut u8) {
+        unsafe {
+            *(ptr as *mut *mut u8) = self.head;
+            self.head = ptr;
+        }
+    }
 }

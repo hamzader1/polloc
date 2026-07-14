@@ -4,34 +4,31 @@ mod errors;
 mod freelist;
 mod platform;
 use bitmap::BitMap;
-use core::alloc::Layout;
 use core::cmp::max;
-use core::hash;
-use core::ptr::{self, null_mut};
+use core::ptr::null_mut;
 use errors::AllocErr;
 use freelist::FreeList;
 use platform::Platform;
-use std::ptr::null;
 
 const POINTER_SIZE: usize = size_of::<*mut u8>();
 const MUL_CONSTANT: usize = 2;
 
 #[derive(Debug)]
 pub struct Pool {
-    freelist: FreeList,
-    slot_size: usize,
-    slot_align: usize,
-    active_block: *mut Block,
+    pub freelist: FreeList,
+    pub slot_size: usize,
+    pub slot_align: usize,
+    pub active_block: *mut Block,
 }
 
 #[derive(Debug)]
 pub struct Block {
-    base: *mut u8,
-    size: usize,
-    hwm: *mut u8,
-    end: *mut u8,
-    prev: *mut Block,
-    bitmap: BitMap,
+    pub base: *mut u8,
+    pub size: usize,
+    pub hwm: *mut u8,
+    pub end: *mut u8,
+    pub prev: *mut Block,
+    pub bitmap: BitMap,
 }
 
 struct EmptyBlockWrapper(Block);
@@ -153,7 +150,7 @@ impl Pool {
         // Ok(null_mut())
     }
 
-    pub fn new_block(&mut self, new_block_size: usize) -> Result<*mut u8, AllocErr> {
+    pub fn new_block(&mut self, new_block_size: usize) -> Result<(), AllocErr> {
         let ptr: *mut u8 = Platform::mmap(new_block_size);
         if ptr.is_null() {
             return Err(AllocErr::OutOfMemory);
@@ -161,7 +158,7 @@ impl Pool {
         let remaining_bytes = new_block_size - size_of::<Block>();
         let bitmap_size = BitMap::required_bytes(remaining_bytes, self.slot_size);
         let header_bitmap_size = self.get_header_bitmap_size(bitmap_size);
-        let mut new_block = unsafe {
+        let new_block = unsafe {
             Block::new(
                 ptr,
                 new_block_size,
@@ -175,7 +172,8 @@ impl Pool {
             (ptr as *mut Block).write(new_block);
         }
         self.active_block = ptr as *mut Block;
-        Ok(unsafe { ptr.add(header_bitmap_size) })
+        Ok(())
+        // Ok(unsafe { ptr.add(header_bitmap_size) })
     }
 
     pub fn get_first_block_ptr(&self, block: &Block) -> *mut u8 {
@@ -240,3 +238,5 @@ impl Pool {
         self.freelist.add_slot(ptr);
     }
 }
+
+// EMPTY
