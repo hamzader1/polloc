@@ -29,7 +29,7 @@ pub type DefaultBlockSource = LibcBlockSource;
 pub type DefaultBlockSource = WindowsBlockSource;
 
 #[derive(Debug)]
-pub struct Pool {
+pub struct Pool<S: BlockSource = DefaultBlockSource> {
     pub freelist: FreeList,
     pub slot_size: usize,
     pub slot_align: usize,
