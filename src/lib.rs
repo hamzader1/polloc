@@ -114,8 +114,9 @@ impl Pool {
         // First: check if there is any free slot
         if let Some(slot) = self.freelist.get_slot() {
             unsafe {
-                let slot_index = self.get_slot_index(slot, &*self.active_block);
-                (*self.active_block).bitmap.set(slot_index, None);
+                let block = &mut *self.get_block(slot);
+                let slot_index = self.get_slot_index(slot, &*self.get_block(slot));
+                (block).bitmap.set(slot_index, None);
             }
             return Some(slot);
         }
