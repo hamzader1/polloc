@@ -299,6 +299,13 @@ impl<S: BlockSource> Pool<S> {
         self.freelist.add_slot(ptr);
         Ok(())
     }
+    pub fn validate_size_align<T>(&self) -> Result<(), AllocErr> {
+        if size_of::<T>() <= self.slot_size && align_of::<T>() <= self.slot_align {
+            Ok(())
+        } else {
+            Err(AllocErr::InvalidAlignment)
+        }
+    }
 }
 
 impl<S: BlockSource> Drop for Pool<S> {
