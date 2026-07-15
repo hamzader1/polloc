@@ -150,7 +150,7 @@ impl<S: BlockSource> Pool<S> {
             self.try_allocate_slow()
         }
     }
-    pub fn try_emplace<'a, T>(&mut self) -> Result<Emplace<'_, S, T>, AllocErr> {
+    pub fn try_emplace<'a, T>(&'a mut self) -> Result<Emplace<'a, S, T>, AllocErr> {
         let ptr = self.try_allocate()?;
         let guard = PoolGuard::with_source(self, ptr);
         Ok(Emplace::with_source(guard))
