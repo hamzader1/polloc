@@ -133,6 +133,14 @@ impl<S: BlockSource> Pool<S> {
     pub fn alloc(&mut self) -> *mut u8 {
         self.try_allocate().unwrap_or_else(|err| err.panic())
     }
+    pub fn try_allocate_with<T, F>(&mut self, f: F) -> Result<*mut T, AllocErr>
+    where
+        F: FnOnce() -> T,
+    {
+        self.validate_size_align::<T>()?;
+        Ok((self.try_emplace()?).write(f()))
+    }
+
     fn try_allocate(&mut self) -> Result<*mut u8, AllocErr> {
         if let Some(ptr) = self.try_allocate_fast() {
             Ok(ptr)
