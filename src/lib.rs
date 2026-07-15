@@ -1,10 +1,14 @@
 #![allow(warnings)]
 mod bitmap;
+mod emplace;
 mod errors;
 mod freelist;
 mod platform;
+mod pool_guard;
 #[cfg(test)]
 mod tests;
+use self::emplace::Emplace;
+use self::pool_guard::PoolGuard;
 #[cfg(unix)]
 use crate::platform::LibcBlockSource;
 #[cfg(windows)]
@@ -24,8 +28,6 @@ const MUL_CONSTANT: usize = 2;
 
 #[cfg(unix)]
 pub type DefaultBlockSource = LibcBlockSource;
-
-
 
 #[cfg(windows)]
 pub type DefaultBlockSource = WindowsBlockSource;
@@ -153,7 +155,7 @@ impl<S: BlockSource> Pool<S> {
         let guard = PoolGuard::with_source(self, ptr);
         Ok(Emplace::with_source(guard))
     }
-    
+
     fn try_allocate_fast(&mut self) -> Option<*mut u8> {
         // First: check if there is any free slot
         if let Some(slot) = self.freelist.get_slot() {
