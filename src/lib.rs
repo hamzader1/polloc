@@ -140,6 +140,12 @@ impl<S: BlockSource> Pool<S> {
             self.try_allocate_slow()
         }
     }
+    pub fn try_emplace<'a, T>(&mut self) -> Result<Emplace<'_, S, T>, AllocErr> {
+        let ptr = self.try_allocate()?;
+        let guard = PoolGuard::with_source(self, ptr);
+        Ok(Emplace::with_source(guard))
+    }
+    
     fn try_allocate_fast(&mut self) -> Option<*mut u8> {
         // First: check if there is any free slot
         if let Some(slot) = self.freelist.get_slot() {
