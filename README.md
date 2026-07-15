@@ -151,6 +151,15 @@ fragmentation, and many platform/runtime details.
 The benchmark is still useful because it shows the cost of this pool's fast
 path when the workload matches its design.
 
+## Limitations
+
+`polloc` is not thread-safe yet. A future version may add a thread-safe API,
+possibly by wrapping pools in synchronization or by using per-thread pools.
+
+Typed allocation currently constructs `T`, but freeing through `pool.free(...)`
+does not call `Drop` for `T`. Types that own resources should be manually
+dropped for now, or wait for a typed free API.
+
 ## TODO
 
 - [ ] Implement `reset` to clear the pool for bulk reuse.
@@ -159,4 +168,5 @@ path when the workload matches its design.
 - [ ] Implement `alloc_one`.
 - [ ] Implement `alloc_val`.
 - [ ] Add a typed free API that drops `T` before returning the slot.
+- [ ] Add a thread-safe pool API or per-thread pool design.
 - [ ] Add more Miri coverage for typed allocation and invalid pointer cases.
