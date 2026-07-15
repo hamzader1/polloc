@@ -9,6 +9,7 @@ pub enum AllocErr {
     DoubleFree,
     InvalidPointer,
     MisalignedFree,
+    InvalidSizeOrAlignement,
 }
 
 impl AllocErr {
@@ -39,6 +40,12 @@ impl fmt::Display for AllocErr {
             }
             AllocErr::MisalignedFree => {
                 write!(f, "free() called with a misaligned pointer")
+            }
+            AllocErr::InvalidSizeOrAlignement => {
+                write!(
+                    f,
+                    "object size or alignment exceeds the pool's slot size or alignment"
+                )
             }
         }
     }
