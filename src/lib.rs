@@ -305,7 +305,7 @@ impl<S: BlockSource> Pool<S> {
         if size_of::<T>() <= self.slot_size && align_of::<T>() <= self.slot_align {
             Ok(())
         } else {
-            Err(AllocErr::InvalidAlignment)
+            Err(AllocErr::InvalidSizeOrAlignement)
         }
     }
 }
