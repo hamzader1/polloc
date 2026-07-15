@@ -1,6 +1,6 @@
 use super::Pool;
 use std::collections::HashSet;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
 fn assert_panics<F: FnOnce()>(f: F) {
@@ -8,11 +8,7 @@ fn assert_panics<F: FnOnce()>(f: F) {
 }
 
 fn n(normal: usize, miri: usize) -> usize {
-    if cfg!(miri) {
-        miri
-    } else {
-        normal
-    }
+    if cfg!(miri) { miri } else { normal }
 }
 
 fn fill(ptr: *mut u8, len: usize, seed: u8) {
@@ -459,7 +455,9 @@ fn free_in_permutation_then_reallocate_all_same_addresses() {
     }
     let mut state = 0xfedc_ba98_7654_3210u64;
     while !ptrs.is_empty() {
-        state = state.wrapping_mul(2862933555777941757).wrapping_add(3037000493);
+        state = state
+            .wrapping_mul(2862933555777941757)
+            .wrapping_add(3037000493);
         let idx = state as usize % ptrs.len();
         pool.free(ptrs.swap_remove(idx));
     }
