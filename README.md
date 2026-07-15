@@ -6,9 +6,6 @@ It allocates memory in slots of one size and one alignment per pool. Freed slots
 are reused through an intrusive free list, and each block keeps a bitmap so the
 allocator can detect invalid states such as double frees.
 
-This project is mainly for learning allocator internals: block layout, free
-lists, bitmap tracking, typed emplacement, and platform-backed virtual memory.
-The source code is documented with inline comments and ASCII diagrams.
 
 ## Basic Use
 
