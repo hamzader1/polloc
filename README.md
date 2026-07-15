@@ -1,6 +1,6 @@
 # Polloc
 
-`polloc` is a small fixed-size pool allocator written in Rust.
+`polloc` is a high-performance fixed-size pool allocator written in Rust.
 
 It allocates memory in slots of one size and one alignment per pool. Freed slots
 are reused through an intrusive free list, and each block keeps a bitmap so the
