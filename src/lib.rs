@@ -16,11 +16,11 @@ use crate::platform::WindowsBlockSource;
 use bitmap::BitMap;
 use core::cmp::max;
 use core::ptr::null_mut;
-use errors::AllocErr;
 use freelist::FreeList;
 
 pub mod block_source;
 pub use block_source::BlockSource;
+pub use errors::AllocErr;
 
 const POINTER_SIZE: usize = size_of::<*mut u8>();
 const POINTER_ALIGN: usize = align_of::<*mut u8>();
@@ -150,7 +150,7 @@ impl<S: BlockSource> Pool<S> {
             self.try_allocate_slow()
         }
     }
-    pub fn try_emplace<'a, T>(&'a mut self) -> Result<Emplace<'a, S, T>, AllocErr> {
+    fn try_emplace<'a, T>(&'a mut self) -> Result<Emplace<'a, S, T>, AllocErr> {
         let ptr = self.try_allocate()?;
         let guard = PoolGuard::with_source(self, ptr);
         Ok(Emplace::with_source(guard))
