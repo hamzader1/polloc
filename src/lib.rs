@@ -142,6 +142,8 @@ static EMPTY_BLOCK: EmptyBlockWrapper = EmptyBlockWrapper(Block {
     hwm: null_mut(),
     end: null_mut(),
     prev: null_mut(),
+    first: null_mut(),
+    capacity: 0,
     bitmap: BitMap::dangling(),
 });
 
