@@ -522,6 +522,7 @@ impl<S: BlockSource> Pool<S> {
                     .unwrap_or_else(|err| err.panic());
                 block.bitmap.set(idx, None);
             }
+            self.live_slots += 1;
             return Some(slot);
         }
 
