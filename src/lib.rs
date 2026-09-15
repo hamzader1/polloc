@@ -104,6 +104,8 @@ pub struct Pool<S: BlockSource = DefaultBlockSource> {
 ///
 /// `hwm` is the cursor for bump allocation. Slots below `hwm` are either live
 /// or on the freelist. Slots at or above `hwm` have never been handed out.
+/// `first`/`capacity` cache the slot region geometry so allocation and freeing
+/// never recompute header math on the hot path.
 #[derive(Debug)]
 pub struct Block {
     /// Base address returned by the block source.
