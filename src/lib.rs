@@ -410,12 +410,24 @@ impl<S: BlockSource> Pool<S> {
         Ok((self.try_emplace()?).write(f()))
     }
 
-    /// Fallible raw allocation entry point used by `alloc` and typed helpers.
-    fn try_allocate(&mut self) -> Result<*mut u8, AllocErr> {
-        if let Some(ptr) = self.try_allocate_fast() {
-            Ok(ptr)
-        } else {
-            self.try_allocate_slow()
+    /// Allocates a slot and moves `value` into it, returning an owning handle.
+    ///
+    /// The [`Slot`] dereferences to `T` and automatically drops `T` and frees
+    /// the slot when it goes out of scope. This is the preferred safe API:
+    /// unlike raw [`Pool::alloc`], it cannot leak or use-after-free by
+    /// accident. Panics on failure; use [`Pool::try_alloc_value`] to handle
+    /// errors.
+    pub fn alloc_value<T>(&mut self, value: T) -> Slot<'_, T, S> {
+        self.try_alloc_value(value)
+            .unwrap_or_else(|err| err.panic())
+    }
+
+    /// Fallible version of [`Pool::alloc_value`].
+    pub fn try_alloc_value<T>(&mut self, value: T) -> Result<Slot<'_, T, S>, AllocErr> {
+        self.validate_size_align::<T>()?;
+        let ptr = self.try_alloc()? as *mut T;
+        unsafe {
+            ptr.write(value);
         }
     }
 
