@@ -750,6 +750,99 @@ impl<S: BlockSource> Pool<S> {
         Ok(())
     }
 
+    /// Drops all allocations at once without unmapping any blocks.
+    ///
+    /// Bitmaps are cleared, high-water marks rewind, the freelist is emptied,
+    /// and the live count returns to zero. Mapped blocks are kept, so
+    /// refilling the pool after `reset` reuses warm memory instead of asking
+    /// the OS again. This is the arena-style bulk-reuse entry point.
+    pub fn reset(&mut self) {
+        self.freelist.clear();
+        let mut current = self.active_block;
+        while current != EMPTY_BLOCK.get_inner() {
+            let block = unsafe { &mut *current };
+            block.hwm = block.first;
+            block.bitmap.zero();
+            current = block.prev;
+        }
+        self.live_slots = 0;
+    }
+
+    /// Ensures room for `additional` more slots, mapping blocks if needed.
+    ///
+    /// Returns `OutOfMemory` if the source cannot back the growth.
+    pub fn reserve(&mut self, additional: usize) -> Result<(), AllocErr> {
+        while self.capacity_slots().saturating_sub(self.live_slots) < additional {
+            let size = self.next_block_size()?;
+            self.new_block(size)?;
+        }
+        Ok(())
+    }
+
+    /// Releases fully-free non-active blocks back to the block source.
+    ///
+    /// A block is releasable only when every bitmap bit is clear, which means
+    /// none of its slots are live. Freed slots of released blocks are pruned
+    /// from the freelist before unmapping. The active block is always kept,
+    /// even when empty, so the pool stays ready for the next allocation.
+    pub fn shrink_to_fit(&mut self) {
+        let active = self.active_block;
+        // Pass 1: identify releasable blocks by (base, size).
+        let mut victims: Vec<(*mut u8, usize)> = Vec::new();
+        let mut current = active;
+        while current != EMPTY_BLOCK.get_inner() {
+            let block = unsafe { &*current };
+            if current != active && block.bitmap.all_clear(block.capacity) {
+                victims.push((block.base, block.size));
+            }
+            current = block.prev;
+        }
+        if victims.is_empty() {
+            return;
+        }
+        // Pass 2: prune freelist entries that point into released blocks.
+        // The entries live inside the victim mappings, so filtering must
+        // happen before any unmap.
+        let mut kept: Vec<*mut u8> = Vec::new();
+        while let Some(slot) = self.freelist.get_slot() {
+            let in_victim = victims.iter().any(|&(base, size)| {
+                let base = base as usize;
+                let slot = slot as usize;
+                slot >= base && slot.wrapping_sub(base) < size
+            });
+            if !in_victim {
+                kept.push(slot);
+            }
+        }
+        for slot in kept {
+            self.freelist.add_slot(slot);
+        }
+        // Pass 3: relink the chain around victims, then unmap them.
+        let mut live_chain: Vec<*mut Block> = Vec::new();
+        current = active;
+        while current != EMPTY_BLOCK.get_inner() {
+            let next = unsafe { (*current).prev };
+            let is_victim = victims
+                .iter()
+                .any(|&(base, _)| base == unsafe { (*current).base });
+            if !is_victim {
+                live_chain.push(current);
+            }
+            current = next;
+        }
+        for (i, &block) in live_chain.iter().enumerate() {
+            unsafe {
+                (*block).prev = live_chain
+                    .get(i + 1)
+                    .copied()
+                    .unwrap_or_else(|| EMPTY_BLOCK.get_inner());
+            }
+        }
+        for (base, size) in victims {
+            self.source.unmap(base, size);
+        }
+    }
+
     /// Checks whether a value of type `T` fits inside this pool's slots.
     ///
     /// Both requirements must hold:
