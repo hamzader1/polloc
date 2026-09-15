@@ -206,8 +206,16 @@ impl Block {
 #[cfg(unix)]
 impl Pool<LibcBlockSource> {
     /// Creates a pool using the Unix libc-backed block source.
+    ///
+    /// Panics on invalid alignment or size overflow; use [`Pool::try_new`]
+    /// for a fallible version.
     pub fn new(size: usize, align: usize) -> Self {
         Self::with_source(size, align, LibcBlockSource)
+    }
+
+    /// Fallible version of [`Pool::new`].
+    pub fn try_new(size: usize, align: usize) -> Result<Self, AllocErr> {
+        Self::try_with_source(size, align, LibcBlockSource)
     }
 }
 
