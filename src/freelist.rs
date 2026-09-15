@@ -1,3 +1,5 @@
+#[expect(unused)]
+use super::Pool;
 /// Intrusive stack of slots that were freed and can be reused.
 ///
 /// "Intrusive" means there is no separate node allocation. The first pointer
@@ -24,12 +26,6 @@ pub struct FreeList {
     head: *mut u8,
 }
 impl FreeList {
-    /// Creates a freelist with an explicit head pointer.
-    #[inline(always)]
-    pub const fn new(head: *mut u8) -> Self {
-        Self { head }
-    }
-
     /// Creates an empty freelist.
     #[inline(always)]
     pub const fn dangling() -> Self {
@@ -73,21 +69,20 @@ impl FreeList {
         if !self.is_null() {
             let current = self.head;
             let next = unsafe { *(self.head as *mut *mut u8) };
-            self.head = next as *mut u8;
+            self.head = next;
             return Some(current);
         }
         None
     }
 
-    /// Pops a slot without checking whether the freelist is empty.
+    /// Drops every entry, forgetting all reusable slots.
     ///
-    /// This is only useful for tests or experiments that deliberately want the
-    /// unchecked behavior. Calling it when `head` is null is undefined behavior.
-    unsafe fn get_slot_unchecked(&mut self) -> *mut u8 {
-        let current = self.head;
-        let next = *(self.head as *mut *mut u8);
-        self.head = next as *mut u8;
-        current
+    /// Used by [`Pool::reset`] (all slots become never allocated again) and by
+    /// [`Pool::shrink_to_fit`] before it rebuilds the list without released
+    /// blocks. Live allocations are unaffected: they are tracked by the
+    /// per block bitmaps, not by this list.
+    pub fn clear(&mut self) {
+        self.head = core::ptr::null_mut();
     }
 
     /// Pushes a freed slot onto the front of the freelist.
