@@ -1,10 +1,10 @@
-#![allow(warnings)]
 mod bitmap;
 mod emplace;
 mod errors;
 mod freelist;
 mod platform;
 mod pool_guard;
+mod slot;
 #[cfg(test)]
 mod tests;
 use self::emplace::Emplace;
@@ -17,10 +17,14 @@ use bitmap::BitMap;
 use core::cmp::max;
 use core::ptr::null_mut;
 use freelist::FreeList;
+use std::marker::PhantomData;
+use std::mem::MaybeUninit;
+use std::rc::Rc;
 
 pub mod block_source;
 pub use block_source::BlockSource;
 pub use errors::AllocErr;
+pub use slot::Slot;
 
 const POINTER_SIZE: usize = size_of::<*mut u8>();
 const POINTER_ALIGN: usize = align_of::<*mut u8>();
@@ -66,6 +70,10 @@ pub type DefaultBlockSource = WindowsBlockSource;
 ///
 /// If neither path can provide a slot, the pool maps a larger block and makes
 /// that block the new active block.
+///
+/// `Pool` is intentionally single-threaded: it is `!Send` and `!Sync`.
+/// Share it across threads only behind a lock (e.g. `Mutex<Pool>`) owned by
+/// your own wrapper.
 #[derive(Debug)]
 pub struct Pool<S: BlockSource = DefaultBlockSource> {
     /// Stack of freed slots ready to be reused.
@@ -150,7 +158,7 @@ static EMPTY_BLOCK: EmptyBlockWrapper = EmptyBlockWrapper(Block {
 unsafe impl Sync for EmptyBlockWrapper {}
 impl EmptyBlockWrapper {
     /// Returns a raw pointer to the sentinel block.
-    fn get_inner(&self) -> *mut Block {
+    fn inner(&self) -> *mut Block {
         &self.0 as *const Block as *mut Block
     }
 }
@@ -182,26 +190,6 @@ impl Block {
             bitmap,
         }
     }
-
-    /// Returns the block base pointer.
-    fn ptr(&self) -> *mut u8 {
-        self.base
-    }
-
-    /// Returns the mapped size for this block.
-    fn size(&self) -> usize {
-        self.size
-    }
-
-    /// Returns the current high-water mark.
-    fn hwm(&self) -> *mut u8 {
-        self.hwm
-    }
-
-    /// Returns the previous block in the chain.
-    fn prev(&self) -> *mut Block {
-        self.prev
-    }
 }
 #[cfg(unix)]
 impl Pool<LibcBlockSource> {
@@ -222,8 +210,16 @@ impl Pool<LibcBlockSource> {
 #[cfg(windows)]
 impl Pool<WindowsBlockSource> {
     /// Creates a pool using the Windows virtual-memory block source.
+    ///
+    /// Panics on invalid alignment or size overflow; use [`Pool::try_new`]
+    /// for a fallible version.
     pub fn new(size: usize, align: usize) -> Self {
         Self::with_source(size, align, WindowsBlockSource)
+    }
+
+    /// Fallible version of [`Pool::new`].
+    pub fn try_new(size: usize, align: usize) -> Result<Self, AllocErr> {
+        Self::try_with_source(size, align, WindowsBlockSource)
     }
 }
 
@@ -273,7 +269,7 @@ impl<S: BlockSource> Pool<S> {
             freelist: FreeList::dangling(),
             slot_size: aligned_size,
             slot_align: align,
-            active_block: EMPTY_BLOCK.get_inner(),
+            active_block: EMPTY_BLOCK.inner(),
             source,
             page_size,
             live_slots: 0,
@@ -305,7 +301,7 @@ impl<S: BlockSource> Pool<S> {
     pub fn num_blocks(&self) -> usize {
         let mut count = 0;
         let mut current = self.active_block;
-        while current != EMPTY_BLOCK.get_inner() {
+        while current != EMPTY_BLOCK.inner() {
             count += 1;
             current = unsafe { (*current).prev };
         }
@@ -316,7 +312,7 @@ impl<S: BlockSource> Pool<S> {
     pub fn capacity_slots(&self) -> usize {
         let mut total = 0;
         let mut current = self.active_block;
-        while current != EMPTY_BLOCK.get_inner() {
+        while current != EMPTY_BLOCK.inner() {
             total += unsafe { (*current).capacity };
             current = unsafe { (*current).prev };
         }
@@ -327,7 +323,7 @@ impl<S: BlockSource> Pool<S> {
     pub fn memory_bytes(&self) -> usize {
         let mut total = 0;
         let mut current = self.active_block;
-        while current != EMPTY_BLOCK.get_inner() {
+        while current != EMPTY_BLOCK.inner() {
             total += unsafe { (*current).size };
             current = unsafe { (*current).prev };
         }
@@ -348,7 +344,7 @@ impl<S: BlockSource> Pool<S> {
             return false;
         }
         let mut current = self.active_block;
-        while current != EMPTY_BLOCK.get_inner() {
+        while current != EMPTY_BLOCK.inner() {
             let block = unsafe { &*current };
             if ptr >= block.first && ptr < block.hwm {
                 let offset = (ptr as usize).wrapping_sub(block.first as usize);
@@ -384,7 +380,7 @@ impl<S: BlockSource> Pool<S> {
 
     /// Allocates one slot and constructs a `T` inside it.
     ///
-    /// The value is only written after a guard has been installed. If `f`
+    /// The value is only written after a guard has been installed. If `f` (the closure)
     /// panics while building the value, the guard returns the raw slot to the
     /// pool instead of leaking it.
     ///
@@ -488,7 +484,7 @@ impl<S: BlockSource> Pool<S> {
     /// performs the size and alignment validation before exposing the typed
     /// pointer.
     fn try_emplace<'a, T>(&'a mut self) -> Result<Emplace<'a, S, T>, AllocErr> {
-        let ptr = self.try_allocate()?;
+        let ptr = self.try_alloc()?;
         let guard = PoolGuard::with_source(self, ptr);
         Ok(Emplace::with_source(guard))
     }
@@ -662,22 +658,7 @@ impl<S: BlockSource> Pool<S> {
         Ok(())
     }
 
-    /// Returns the first slot address in `block`.
-    ///
-    /// This skips the block header and bitmap, then rounds up to the slot size.
-    fn get_first_block_ptr(&self, block: &Block) -> *mut u8 {
-        let Block { base, bitmap, .. } = block;
-
-        let offset = Self::align_up_unchecked(size_of::<Block>() + bitmap.size, self.slot_size);
-        unsafe { base.add(offset) }
-    }
-
     /// Returns how many bytes the block header and bitmap occupy together.
-    fn get_header_bitmap_size(&self, bitmap_size: usize) -> usize {
-        Self::align_up_unchecked(size_of::<Block>() + bitmap_size, self.slot_size)
-    }
-
-    /// Rounds `size` up to `align` without overflow checking.
     ///
     /// The bitmap is sized (possibly generously) for the whole block, then
     /// the combined header is rounded up so the first slot stays on a slot
@@ -700,6 +681,8 @@ impl<S: BlockSource> Pool<S> {
     ///
     /// The search walks backward through the block chain. A pointer belongs to
     /// a block only if it is inside that block's slot region and below `hwm`.
+    /// Header and bitmap bytes are deliberately excluded, so freeing them
+    /// reports `InvalidPointer`.
     ///
     /// ```text
     /// active ---> block C ---> block B ---> block A ---> EMPTY
@@ -710,10 +693,9 @@ impl<S: BlockSource> Pool<S> {
             return null_mut();
         }
         let mut current = self.active_block;
-        while current != EMPTY_BLOCK.get_inner() {
+        while current != EMPTY_BLOCK.inner() {
             let block = unsafe { &*current };
-            let region_start_ptr = self.get_first_block_ptr(block);
-            if ptr >= region_start_ptr && ptr < block.hwm {
+            if ptr >= block.first && ptr < block.hwm {
                 return current;
             }
             current = block.prev;
@@ -722,7 +704,7 @@ impl<S: BlockSource> Pool<S> {
         null_mut()
     }
 
-    /// Computes the slot index for a pointer known to belong to `block`.
+    /// Computes the slot index for a pointer inside `block`'s slot region.
     ///
     /// ```text
     /// first slot
@@ -753,7 +735,7 @@ impl<S: BlockSource> Pool<S> {
 
     /// Frees a raw slot and panics if the pointer is invalid.
     pub fn free(&mut self, ptr: *mut u8) {
-        self.try_free(ptr).map_err(|err| err.panic());
+        self.try_free(ptr).unwrap_or_else(|err| err.panic());
     }
 
     /// Validates and frees a raw slot.
@@ -773,19 +755,20 @@ impl<S: BlockSource> Pool<S> {
     /// slot bytes store previous freelist head
     /// freelist.head points at this slot
     /// ```
-    fn try_free(&mut self, ptr: *mut u8) -> Result<(), AllocErr> {
+    pub fn try_free(&mut self, ptr: *mut u8) -> Result<(), AllocErr> {
         let block_ptr = self.get_block(ptr);
         if block_ptr.is_null() {
             return Err(AllocErr::InvalidPointer);
         }
         let block = unsafe { &mut *block_ptr };
-        let slot_index = self.get_slot_index(ptr, block);
+        let slot_index = self.try_slot_index(ptr, block)?;
         let (is_slot_free, cached_byte) = block.bitmap.is_free(slot_index);
         if is_slot_free {
             return Err(AllocErr::DoubleFree);
         }
         block.bitmap.clear(slot_index, Some(cached_byte));
         self.freelist.add_slot(ptr);
+        self.live_slots -= 1;
         Ok(())
     }
 
@@ -798,7 +781,7 @@ impl<S: BlockSource> Pool<S> {
     pub fn reset(&mut self) {
         self.freelist.clear();
         let mut current = self.active_block;
-        while current != EMPTY_BLOCK.get_inner() {
+        while current != EMPTY_BLOCK.inner() {
             let block = unsafe { &mut *current };
             block.hwm = block.first;
             block.bitmap.zero();
@@ -829,7 +812,7 @@ impl<S: BlockSource> Pool<S> {
         // Pass 1: identify releasable blocks by (base, size).
         let mut victims: Vec<(*mut u8, usize)> = Vec::new();
         let mut current = active;
-        while current != EMPTY_BLOCK.get_inner() {
+        while current != EMPTY_BLOCK.inner() {
             let block = unsafe { &*current };
             if current != active && block.bitmap.all_clear(block.capacity) {
                 victims.push((block.base, block.size));
@@ -859,7 +842,7 @@ impl<S: BlockSource> Pool<S> {
         // Pass 3: relink the chain around victims, then unmap them.
         let mut live_chain: Vec<*mut Block> = Vec::new();
         current = active;
-        while current != EMPTY_BLOCK.get_inner() {
+        while current != EMPTY_BLOCK.inner() {
             let next = unsafe { (*current).prev };
             let is_victim = victims
                 .iter()
@@ -874,7 +857,7 @@ impl<S: BlockSource> Pool<S> {
                 (*block).prev = live_chain
                     .get(i + 1)
                     .copied()
-                    .unwrap_or_else(|| EMPTY_BLOCK.get_inner());
+                    .unwrap_or_else(|| EMPTY_BLOCK.inner());
             }
         }
         for (base, size) in victims {
@@ -894,7 +877,7 @@ impl<S: BlockSource> Pool<S> {
         if size_of::<T>() <= self.slot_size && align_of::<T>() <= self.slot_align {
             Ok(())
         } else {
-            Err(AllocErr::InvalidSizeOrAlignement)
+            Err(AllocErr::InvalidSizeOrAlignment)
         }
     }
 }
@@ -904,11 +887,13 @@ impl<S: BlockSource> Drop for Pool<S> {
     ///
     /// Individual live allocations do not need to be freed before the pool is
     /// dropped. Dropping the pool releases the backing blocks in chain order.
+    /// Typed [`Slot`] handles owned by user code must be dropped first: they
+    /// borrow the pool, so the borrow checker already enforces this.
     fn drop(&mut self) {
-        while self.active_block != EMPTY_BLOCK.get_inner() {
+        while self.active_block != EMPTY_BLOCK.inner() {
             let current = unsafe { &*self.active_block };
             self.active_block = current.prev;
-            self.source.unmap(current.base as *mut u8, current.size);
+            self.source.unmap(current.base, current.size);
         }
     }
 }
