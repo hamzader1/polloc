@@ -515,25 +515,37 @@ impl<S: BlockSource> Pool<S> {
         if let Some(slot) = self.freelist.get_slot() {
             unsafe {
                 let block = &mut *self.get_block(slot);
-                let slot_index = self.get_slot_index(slot, block);
-                (block).bitmap.set(slot_index, None);
+                // A slot coming from our own freelist must name a valid slot
+                // of its block. Anything else means pool memory was corrupted.
+                let idx = self
+                    .try_slot_index(slot, &*block)
+                    .unwrap_or_else(|err| err.panic());
+                block.bitmap.set(idx, None);
             }
             return Some(slot);
         }
 
-        // If no slot was freed, hand out the next never-used slot.
+        // The sentinel has no slot area; skip straight to mapping a block.
+        if self.active_block == EMPTY_BLOCK.inner() {
+            return None;
+        }
+
+        // If no slot was freed, hand out the next never used slot.
         unsafe {
             let block = self.active_block;
 
             let hwm = (*block).hwm;
             let end = (*block).end;
-
-            if hwm as usize + self.slot_size <= end as usize {
+            let remaining = (end as usize).checked_sub(hwm as usize);
+            if remaining.is_some_and(|remaining| self.slot_size <= remaining) {
                 let slot = hwm;
-                let slot_index = self.get_slot_index(slot, &*block);
+                let slot_index = self
+                    .try_slot_index(slot, &*block)
+                    .unwrap_or_else(|err| err.panic());
 
                 (*block).bitmap.set(slot_index, None);
                 (*block).hwm = hwm.add(self.slot_size);
+                self.live_slots += 1;
 
                 return Some(slot);
             }
