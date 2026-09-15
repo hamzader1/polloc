@@ -78,6 +78,35 @@ impl BitMap {
         unsafe { (self.ptr.add(byte_index), byte_offset as u8) }
     }
 
+    /// Clears every bit. Used by [`Pool::reset`] and block initialization.
+    pub(crate) fn zero(&mut self) {
+        unsafe {
+            self.ptr.write_bytes(0, self.size);
+        }
+    }
+
+    /// Returns `true` when the first `capacity` bits are all clear.
+    ///
+    /// [`Pool::shrink_to_fit`] uses this to prove a block holds no live slots
+    /// before releasing it. Only the capacity prefix is inspected; padding
+    /// bits in the final byte are always zero by construction.
+    pub(crate) fn all_clear(&self, capacity: usize) -> bool {
+        let full_bytes = capacity / BITS_PER_BYTE;
+        for i in 0..full_bytes {
+            if unsafe { core::ptr::read(self.ptr.add(i)) } != 0 {
+                return false;
+            }
+        }
+        let remainder = capacity % BITS_PER_BYTE;
+        if remainder > 0 {
+            let mask = (1u8 << remainder) - 1;
+            if unsafe { core::ptr::read(self.ptr.add(full_bytes)) } & mask != 0 {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Returns whether a slot is free and also returns the byte lookup result.
     ///
     /// The cached byte pointer and bit offset let the caller avoid doing the
