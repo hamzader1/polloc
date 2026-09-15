@@ -1,3 +1,5 @@
+#[expect(unused)]
+use super::Pool;
 /// Number of allocation slots represented by one bitmap byte.
 pub const BITS_PER_BYTE: usize = 8;
 
@@ -12,10 +14,10 @@ pub const BITS_PER_BYTE: usize = 8;
 /// byte 0
 /// +---+---+---+---+---+---+---+---+
 /// | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
-//  +---+---+---+---+---+---+---+---+
-//                         ^       ^
-//                         |       |
-//                        slot 2  slot 0
+/// +---+---+---+---+---+---+---+---+
+///                         ^       ^
+///                         |       |
+///                        slot 2  slot 0
 ///
 /// byte_index = slot_index / BITS_PER_BYTE
 /// bit_index  = slot_index % BITS_PER_BYTE
