@@ -69,15 +69,21 @@ pub type DefaultBlockSource = WindowsBlockSource;
 #[derive(Debug)]
 pub struct Pool<S: BlockSource = DefaultBlockSource> {
     /// Stack of freed slots ready to be reused.
-    pub freelist: FreeList,
+    freelist: FreeList,
     /// Size of each slot after rounding up for pointer storage and alignment.
-    pub slot_size: usize,
+    slot_size: usize,
     /// Alignment promised for every slot returned by this pool.
-    pub slot_align: usize,
+    slot_align: usize,
     /// Most recent block. New high-water allocations come from this block.
-    pub active_block: *mut Block,
+    active_block: *mut Block,
     /// Backend used to map and unmap raw memory blocks.
     source: S,
+    /// Cached platform granularity, so growth never re-queries the OS.
+    page_size: usize,
+    /// Number of slots currently handed out and not yet freed.
+    live_slots: usize,
+    /// Marker that removes the auto `Send`/`Sync` impls raw pointers bring.
+    _single_thread: PhantomData<Rc<()>>,
 }
 
 /// Header stored at the beginning of every mapped block.
