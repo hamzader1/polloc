@@ -701,15 +701,21 @@ impl<S: BlockSource> Pool<S> {
     ///             ^
     ///             ptr -> index 2
     /// ```
-    fn get_slot_index(&self, ptr: *mut u8, block: &Block) -> usize {
-        let first_block = self.get_first_block_ptr(block) as usize;
-        debug_assert_eq!(
-            (ptr as usize - first_block) % self.slot_size,
-            0,
-            "{}",
-            AllocErr::MisalignedFree.panic()
-        );
-        ((ptr as usize) - (first_block)) / self.slot_size
+    ///
+    /// Unlike the old debug-only assertion, misalignment and out-of-range
+    /// indices are runtime errors in every build profile, so release builds
+    /// can never turn a bad free into out-of-bounds bitmap writes.
+    fn try_slot_index(&self, ptr: *mut u8, block: &Block) -> Result<usize, AllocErr> {
+        let first = block.first as usize;
+        let offset = (ptr as usize).wrapping_sub(first);
+        if !offset.is_multiple_of(self.slot_size) {
+            return Err(AllocErr::MisalignedFree);
+        }
+        let idx = offset / self.slot_size;
+        if idx >= block.capacity {
+            return Err(AllocErr::InvalidPointer);
+        }
+        Ok(idx)
     }
 
     /// Frees a raw slot and panics if the pointer is invalid.
