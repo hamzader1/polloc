@@ -632,10 +632,14 @@ impl<S: BlockSource> Pool<S> {
 
     /// Rounds `size` up to `align` without overflow checking.
     ///
-    /// Callers use this only after sizes have already been bounded by mapped
-    /// block sizes.
-    fn align_up_unchecked(size: usize, align: usize) -> usize {
-        (size + align - 1) & !(align - 1)
+    /// The bitmap is sized (possibly generously) for the whole block, then
+    /// the combined header is rounded up so the first slot stays on a slot
+    /// boundary, which also preserves the pool alignment guarantee.
+    fn header_for(&self, bitmap_size: usize) -> Result<usize, AllocErr> {
+        let header = size_of::<Block>()
+            .checked_add(bitmap_size)
+            .ok_or(AllocErr::Overflow)?;
+        Self::align_up(header, self.slot_size).ok_or(AllocErr::Overflow)
     }
 
     /// Rounds `size` up to `align`, returning `None` on integer overflow.
