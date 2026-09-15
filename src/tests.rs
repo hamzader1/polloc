@@ -1,4 +1,5 @@
 use super::Pool;
+use crate::AllocErr;
 use std::collections::HashSet;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
@@ -610,4 +611,276 @@ fn drop_stress_many_pools_created_and_dropped() {
         }
         drop(pool);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Production-hardening tests for the 0.2 API surface.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn try_new_rejects_bad_alignment() {
+    use std::mem::{align_of, size_of};
+    // Zero and non-power-of-two alignments are never valid.
+    for bad in [0usize, 3, 6, 12, 24, 100] {
+        assert!(matches!(
+            Pool::try_new(8, bad),
+            Err(AllocErr::InvalidAlignment)
+        ));
+    }
+    // Alignment wider than a page cannot be promised by page mappings.
+    let probe = Pool::new(8, 8);
+    let page = probe.page_size();
+    assert!(matches!(
+        Pool::try_new(8, page * 2),
+        Err(AllocErr::InvalidAlignment)
+    ));
+    // Sane inputs still construct, with accessors agreeing with layout.
+    let pool = Pool::try_new(size_of::<u64>(), align_of::<u64>()).unwrap();
+    assert!(pool.slot_size() >= size_of::<u64>());
+    assert_eq!(pool.slot_size() % pool.slot_align(), 0);
+    assert_eq!(pool.page_size(), page);
+    assert!(pool.is_empty());
+}
+
+#[test]
+fn huge_slots_grow_the_first_block_instead_of_panicking() {
+    // Regression test: this used to panic on `Option::unwrap()` in the slow
+    // path because one 1 MiB slot never fit the default first block.
+    let mut pool = Pool::new(1 << 20, 8);
+    assert_eq!(pool.num_blocks(), 0);
+    let ptr = pool.try_alloc().expect("huge slot must map a fitting block");
+    assert!(!ptr.is_null());
+    assert_eq!(ptr as usize % 8, 0);
+    assert_eq!(pool.num_blocks(), 1);
+    assert!(pool.capacity_slots() >= 1);
+    fill(ptr, 1024, 0xab);
+    check(ptr, 1024, 0xab);
+    pool.free(ptr);
+    assert!(pool.is_empty());
+}
+
+#[test]
+fn fallible_free_reports_error_kinds_without_panicking() {
+    let mut pool = Pool::new(64, 16);
+    let ptr = pool.alloc();
+    // Interior pointer: slot region found, boundary check fails.
+    assert!(matches!(
+        unsafe { pool.try_free(ptr.add(1)) },
+        Err(AllocErr::MisalignedFree)
+    ));
+    // Null and foreign pointers never enter any block's slot region.
+    assert!(matches!(
+        pool.try_free(ptr::null_mut()),
+        Err(AllocErr::InvalidPointer)
+    ));
+    let mut byte = 0u8;
+    assert!(matches!(
+        pool.try_free(&mut byte as *mut u8),
+        Err(AllocErr::InvalidPointer)
+    ));
+    // Double free is still caught by the bitmap.
+    pool.free(ptr);
+    assert!(matches!(pool.try_free(ptr), Err(AllocErr::DoubleFree)));
+}
+
+#[test]
+fn contains_tracks_liveness() {
+    let mut pool = Pool::new(32, 8);
+    let ptr = pool.alloc();
+    assert!(pool.contains(ptr));
+    assert!(!pool.contains(unsafe { ptr.add(1) }));
+    assert!(!pool.contains(ptr::null_mut()));
+    pool.free(ptr);
+    assert!(!pool.contains(ptr));
+}
+
+#[test]
+fn stats_count_live_slots_blocks_and_bytes() {
+    let mut pool = Pool::new(32, 8);
+    assert_eq!((pool.live_slots(), pool.num_blocks(), pool.memory_bytes()), (0, 0, 0));
+    let a = pool.alloc();
+    let b = pool.alloc();
+    assert_eq!(pool.live_slots(), 2);
+    assert!(pool.num_blocks() >= 1);
+    assert!(pool.memory_bytes() >= pool.page_size());
+    assert!(pool.capacity_slots() >= 2);
+    pool.free(a);
+    assert_eq!(pool.live_slots(), 1);
+    pool.free(b);
+    assert!(pool.is_empty());
+}
+
+#[test]
+fn reset_reuses_warm_blocks_for_bulk_reuse() {
+    let mut pool = Pool::new(48, 8);
+    let mut first_gen = Vec::new();
+    for _ in 0..n(256, 32) {
+        first_gen.push(pool.alloc());
+    }
+    let blocks_before = pool.num_blocks();
+    assert!(blocks_before >= 1);
+    pool.reset();
+    assert!(pool.is_empty());
+    assert_eq!(pool.live_slots(), 0);
+    // No new mapping should be needed to hand out the same amount again.
+    let mut second_gen = Vec::new();
+    for _ in 0..n(256, 32) {
+        second_gen.push(pool.alloc());
+    }
+    assert_eq!(pool.num_blocks(), blocks_before);
+    for (i, &ptr) in second_gen.iter().enumerate() {
+        fill(ptr, 48, i as u8);
+    }
+    for (i, &ptr) in second_gen.iter().enumerate() {
+        check(ptr, 48, i as u8);
+        pool.free(ptr);
+    }
+    for ptr in first_gen {
+        // Stale pointers from before the reset are dead: the bitmap was
+        // cleared, so freeing one now looks like a double free, never a
+        // silent corruption.
+        assert!(matches!(pool.try_free(ptr), Err(AllocErr::DoubleFree)));
+    }
+}
+
+#[test]
+fn reserve_maps_capacity_up_front() {
+    let mut pool = Pool::new(32, 8);
+    pool.reserve(1000).unwrap();
+    assert!(pool.capacity_slots() >= 1000);
+    assert_eq!(pool.live_slots(), 0);
+    let blocks = pool.num_blocks();
+    let mut ptrs = Vec::new();
+    for _ in 0..1000 {
+        ptrs.push(pool.alloc());
+    }
+    // Everything fit in the reserved blocks: no growth while filling.
+    assert_eq!(pool.num_blocks(), blocks);
+    for ptr in ptrs {
+        pool.free(ptr);
+    }
+}
+
+#[test]
+fn shrink_to_fit_releases_fully_free_blocks() {
+    let mut pool = Pool::new(64, 8);
+    let mut ptrs = Vec::new();
+    for _ in 0..n(2000, 200) {
+        ptrs.push(pool.alloc());
+    }
+    assert!(pool.num_blocks() > 1);
+    for ptr in ptrs {
+        pool.free(ptr);
+    }
+    pool.shrink_to_fit();
+    // Only the active block is kept; the rest go back to the OS.
+    assert_eq!(pool.num_blocks(), 1);
+    // The pool is fully usable afterwards (freelist was pruned, not trashed).
+    let mut again = Vec::new();
+    for i in 0..n(512, 64) {
+        let ptr = pool.alloc();
+        fill(ptr, 64, i as u8);
+        again.push((ptr, i as u8));
+    }
+    for (ptr, seed) in again {
+        check(ptr, 64, seed);
+        pool.free(ptr);
+    }
+}
+
+#[test]
+fn slot_value_deref_mut_and_auto_free() {
+    let mut pool = Pool::new(size_of::<u64>(), align_of::<u64>());
+    let raw = {
+        let mut slot = pool.alloc_value(123u64);
+        assert_eq!(*slot, 123);
+        *slot = 456;
+        assert_eq!(*slot, 456);
+        slot.as_ptr() as *mut u8
+        // Slot borrows the pool exclusively, so no pool call is possible
+        // while it is alive; the borrow checker enforces single ownership.
+    };
+    // Dropping the Slot freed it: no leak, no manual free needed.
+    assert!(pool.is_empty());
+    assert!(!pool.contains(raw));
+}
+
+#[test]
+fn slot_uninit_write_initializes_without_pool_roundtrip() {
+    use std::mem::MaybeUninit;
+    let mut pool = Pool::new(size_of::<String>(), align_of::<String>());
+    assert!(pool.is_empty());
+    {
+        let uninit: crate::Slot<'_, MaybeUninit<String>, _> = pool.alloc_uninit();
+        let mut slot = uninit.write(String::from("hello"));
+        assert_eq!(slot.as_str(), "hello");
+        slot.push_str(" world");
+        assert_eq!(&**slot, "hello world");
+    }
+    assert!(pool.is_empty());
+    // Allocating, initializing, and dropping used exactly one block and one
+    // slot: `write` performs no extra pool round trip.
+    assert_eq!(pool.num_blocks(), 1);
+    assert!(pool.capacity_slots() >= 1);
+}
+
+#[test]
+fn slot_drop_runs_destructor_and_free_value_matches() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    struct Droppable {
+        drops: Rc<Cell<u32>>,
+    }
+    impl Drop for Droppable {
+        fn drop(&mut self) {
+            self.drops.set(self.drops.get() + 1);
+        }
+    }
+    let drops = Rc::new(Cell::new(0u32));
+    let mut pool = Pool::new(size_of::<Droppable>(), align_of::<Droppable>());
+    {
+        let _slot = pool.alloc_value(Droppable { drops: drops.clone() });
+        assert_eq!(drops.get(), 0);
+    }
+    assert_eq!(drops.get(), 1);
+    assert!(pool.is_empty());
+
+    // into_raw + free_value path drops exactly once as well.
+    let raw = pool.alloc_value(Droppable { drops: drops.clone() }).into_raw();
+    assert_eq!(drops.get(), 1);
+    unsafe {
+        pool.free_value(raw);
+    }
+    assert_eq!(drops.get(), 2);
+    assert!(pool.is_empty());
+}
+
+#[test]
+fn typed_allocation_rejects_oversized_types() {
+    let mut pool = Pool::new(8, 8);
+    assert!(matches!(
+        pool.try_alloc_value([0u64; 16]),
+        Err(AllocErr::InvalidSizeOrAlignment)
+    ));
+    #[repr(align(64))]
+    struct OverAligned;
+    assert!(matches!(
+        pool.try_alloc_uninit::<OverAligned>(),
+        Err(AllocErr::InvalidSizeOrAlignment)
+    ));
+}
+
+#[test]
+fn fast_path_reuses_freed_slots_without_new_mappings() {
+    // The freelist path must not map: churn within one block keeps the
+    // block count (and therefore mmap traffic) flat.
+    let mut pool = Pool::new(32, 8);
+    pool.reserve(64).unwrap();
+    let blocks = pool.num_blocks();
+    for _ in 0..1000 {
+        let ptr = pool.try_alloc().unwrap();
+        pool.free(ptr);
+    }
+    assert_eq!(pool.num_blocks(), blocks);
+    assert!(pool.is_empty());
 }
