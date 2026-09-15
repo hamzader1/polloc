@@ -429,6 +429,57 @@ impl<S: BlockSource> Pool<S> {
         unsafe {
             ptr.write(value);
         }
+        Ok(Slot::new(self, ptr))
+    }
+
+    /// Reserves an uninitialized slot for `T`, returning an owning handle.
+    ///
+    /// Finish initialization with [`Slot::write`], which converts the handle
+    /// into `Slot<T>` without touching the pool again. Panics on failure;
+    /// use [`Pool::try_alloc_uninit`] for the fallible version.
+    pub fn alloc_uninit<T>(&mut self) -> Slot<'_, MaybeUninit<T>, S> {
+        self.try_alloc_uninit().unwrap_or_else(|err| err.panic())
+    }
+
+    /// Fallible version of [`Pool::alloc_uninit`].
+    pub fn try_alloc_uninit<T>(&mut self) -> Result<Slot<'_, MaybeUninit<T>, S>, AllocErr> {
+        self.validate_size_align::<T>()?;
+        let ptr = self.try_alloc()? as *mut MaybeUninit<T>;
+        Ok(Slot::new(self, ptr))
+    }
+
+    /// Frees a slot previously leaked via [`Slot::into_raw`], dropping `T`.
+    ///
+    /// Runs the destructor of the value in place, then returns the slot to
+    /// the pool. Panics on invalid pointers; use [`Pool::try_free_value`]
+    /// for a fallible version.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must have come from [`Slot::into_raw`] for a `Slot<T>` of this
+    /// pool, must not have been freed already, and the slot must still hold
+    /// a valid `T`. A pointer cast from an unrelated type with a matching
+    /// size would run the wrong destructor, which is undefined behavior that
+    /// no runtime check can catch.
+    pub unsafe fn free_value<T>(&mut self, ptr: *mut T) {
+        unsafe { self.try_free_value(ptr) }.unwrap_or_else(|err| err.panic())
+    }
+
+    /// Fallible version of [`Pool::free_value`].
+    ///
+    /// # Safety
+    ///
+    /// Same contract as [`Pool::free_value`]: the pointer must designate a
+    /// live `T` owned by this pool.
+    pub unsafe fn try_free_value<T>(&mut self, ptr: *mut T) -> Result<(), AllocErr> {
+        if ptr.is_null() {
+            return Err(AllocErr::InvalidPointer);
+        }
+        self.validate_size_align::<T>()?;
+        unsafe {
+            ptr.drop_in_place();
+        }
+        self.try_free(ptr as *mut u8)
     }
 
     /// Allocates a raw slot and wraps it in an emplacement guard.
