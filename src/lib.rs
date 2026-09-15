@@ -107,17 +107,21 @@ pub struct Pool<S: BlockSource = DefaultBlockSource> {
 #[derive(Debug)]
 pub struct Block {
     /// Base address returned by the block source.
-    pub base: *mut u8,
+    base: *mut u8,
     /// Total mapped block size in bytes.
-    pub size: usize,
+    size: usize,
     /// High-water mark: the first never-allocated byte in the slot area.
-    pub hwm: *mut u8,
+    hwm: *mut u8,
     /// One-past-the-end address of this mapped block.
-    pub end: *mut u8,
+    end: *mut u8,
     /// Previous block in the pool's block chain.
-    pub prev: *mut Block,
+    prev: *mut Block,
+    /// Address of the first usable slot (header + bitmap rounded up).
+    first: *mut u8,
+    /// Number of slots that fit between `first` and `end`.
+    capacity: usize,
     /// Allocation-state bitmap for slots in this block.
-    pub bitmap: BitMap,
+    bitmap: BitMap,
 }
 
 /// Wrapper that lets the empty sentinel block be `Sync`.
