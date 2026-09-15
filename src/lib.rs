@@ -156,12 +156,19 @@ impl EmptyBlockWrapper {
 }
 impl Block {
     /// Builds a block header value before it is written into mapped memory.
-    pub fn new(
+    ///
+    /// Crate private: blocks only ever come from the pool's block source.
+    /// Eight fields (base, size, hwm, end, prev, first, capacity, bitmap) is
+    /// one over the default lint threshold, hence the allow below.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
         base: *mut u8,
         size: usize,
         hwm: *mut u8,
         end: *mut u8,
         prev: *mut Block,
+        first: *mut u8,
+        capacity: usize,
         bitmap: BitMap,
     ) -> Self {
         Self {
@@ -170,6 +177,8 @@ impl Block {
             hwm,
             end,
             prev,
+            first,
+            capacity,
             bitmap,
         }
     }
