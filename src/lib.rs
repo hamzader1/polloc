@@ -595,21 +595,35 @@ impl<S: BlockSource> Pool<S> {
         if ptr.is_null() {
             return Err(AllocErr::OutOfMemory);
         }
-        let remaining_bytes = new_block_size - size_of::<Block>();
+        let remaining_bytes = new_block_size
+            .checked_sub(size_of::<Block>())
+            .ok_or(AllocErr::Overflow)?;
         let bitmap_size = BitMap::required_bytes(remaining_bytes, self.slot_size);
-        let header_bitmap_size = self.get_header_bitmap_size(bitmap_size);
+        let header_size = self.header_for(bitmap_size)?;
+        let first = unsafe { ptr.add(header_size) };
+        let end = unsafe { ptr.add(new_block_size) };
+        let capacity = new_block_size
+            .checked_sub(header_size)
+            .ok_or(AllocErr::Overflow)?
+            / self.slot_size;
+        debug_assert!(capacity >= 1, "block must fit at least one slot");
         let new_block = unsafe {
             Block::new(
                 ptr,
                 new_block_size,
-                ptr.add(header_bitmap_size),
-                ptr.add(new_block_size),
+                first,
+                end,
                 self.active_block,
+                first,
+                capacity,
                 BitMap::new(ptr.add(size_of::<Block>()), bitmap_size),
             )
         };
         unsafe {
             (ptr as *mut Block).write(new_block);
+            // Mappings from custom sources are not guaranteed zeroed, and a
+            // stale bitmap bit would misreport fresh slots as allocated.
+            ptr.add(size_of::<Block>()).write_bytes(0, bitmap_size);
         }
         self.active_block = ptr as *mut Block;
         Ok(())
