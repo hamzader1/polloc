@@ -366,9 +366,20 @@ impl<S: BlockSource> Pool<S> {
     /// Allocates one raw slot and panics if allocation fails.
     ///
     /// The returned pointer owns `self.slot_size` bytes until it is returned
-    /// with `free`.
+    /// with `free`. Prefer [`Pool::try_alloc`] when out of memory is
+    /// recoverable.
     pub fn alloc(&mut self) -> *mut u8 {
-        self.try_allocate().unwrap_or_else(|err| err.panic())
+        self.try_alloc().unwrap_or_else(|err| err.panic())
+    }
+
+    /// Fallible raw allocation: reuse a freed slot or bump the active block,
+    /// mapping a new block only when both fast paths are exhausted.
+    pub fn try_alloc(&mut self) -> Result<*mut u8, AllocErr> {
+        if let Some(ptr) = self.try_allocate_fast() {
+            Ok(ptr)
+        } else {
+            self.try_allocate_slow()
+        }
     }
 
     /// Allocates one slot and constructs a `T` inside it.
