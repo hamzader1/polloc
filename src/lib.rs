@@ -309,6 +309,58 @@ impl<S: BlockSource> Pool<S> {
             count += 1;
             current = unsafe { (*current).prev };
         }
+        count
+    }
+
+    /// Total slot capacity across all mapped blocks.
+    pub fn capacity_slots(&self) -> usize {
+        let mut total = 0;
+        let mut current = self.active_block;
+        while current != EMPTY_BLOCK.get_inner() {
+            total += unsafe { (*current).capacity };
+            current = unsafe { (*current).prev };
+        }
+        total
+    }
+
+    /// Total mapped bytes across all blocks owned by this pool.
+    pub fn memory_bytes(&self) -> usize {
+        let mut total = 0;
+        let mut current = self.active_block;
+        while current != EMPTY_BLOCK.get_inner() {
+            total += unsafe { (*current).size };
+            current = unsafe { (*current).prev };
+        }
+        total
+    }
+
+    /// Returns `true` when no slots are currently handed out.
+    pub fn is_empty(&self) -> bool {
+        self.live_slots == 0
+    }
+
+    /// Checks whether `ptr` is a live, slot aligned allocation of this pool.
+    ///
+    /// This is a lookup helper for diagnostics and tests. It returns `false`
+    /// for freed slots, header/bitmap bytes, foreign pointers, and null.
+    pub fn contains(&self, ptr: *mut u8) -> bool {
+        if ptr.is_null() {
+            return false;
+        }
+        let mut current = self.active_block;
+        while current != EMPTY_BLOCK.get_inner() {
+            let block = unsafe { &*current };
+            if ptr >= block.first && ptr < block.hwm {
+                let offset = (ptr as usize).wrapping_sub(block.first as usize);
+                if !offset.is_multiple_of(self.slot_size) {
+                    return false;
+                }
+                let idx = offset / self.slot_size;
+                return !block.bitmap.is_free(idx).0;
+            }
+            current = block.prev;
+        }
+        false
     }
 
     /// Allocates one raw slot and panics if allocation fails.
