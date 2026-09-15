@@ -70,6 +70,11 @@ impl BitMap {
     fn get_byte_ptr(&self, idx: usize) -> (*mut u8, u8) {
         let byte_index = idx / BITS_PER_BYTE;
         let byte_offset = idx % BITS_PER_BYTE;
+        debug_assert!(
+            byte_index < self.size,
+            "bitmap index {idx} out of bounds (size {})",
+            self.size
+        );
         unsafe { (self.ptr.add(byte_index), byte_offset as u8) }
     }
 
