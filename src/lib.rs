@@ -250,6 +250,39 @@ impl<S: BlockSource> Pool<S> {
             slot_align: align,
             active_block: EMPTY_BLOCK.get_inner(),
             source,
+            page_size,
+            live_slots: 0,
+            _single_thread: PhantomData,
+        })
+    }
+
+    /// Size in bytes of every slot handed out by this pool.
+    pub fn slot_size(&self) -> usize {
+        self.slot_size
+    }
+
+    /// Alignment guaranteed for every slot handed out by this pool.
+    pub fn slot_align(&self) -> usize {
+        self.slot_align
+    }
+
+    /// Platform allocation granularity backing this pool.
+    pub fn page_size(&self) -> usize {
+        self.page_size
+    }
+
+    /// Number of slots currently handed out and not yet freed.
+    pub fn live_slots(&self) -> usize {
+        self.live_slots
+    }
+
+    /// Number of mapped blocks owned by this pool.
+    pub fn num_blocks(&self) -> usize {
+        let mut count = 0;
+        let mut current = self.active_block;
+        while current != EMPTY_BLOCK.get_inner() {
+            count += 1;
+            current = unsafe { (*current).prev };
         }
     }
 
