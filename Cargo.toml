@@ -1,10 +1,11 @@
 [package]
 name = "polloc"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
 libc = "0.2.186"
+rand = "0.10.2"
 [dev-dependencies]
 criterion = "0.5"
 
