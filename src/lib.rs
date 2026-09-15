@@ -233,18 +233,43 @@ impl<S: BlockSource> Pool<S> {
     /// The public constructors choose a platform source. This function keeps
     /// the allocator logic generic, which lets tests or future backends provide
     /// memory without changing the allocation algorithm.
-    fn with_source(size: usize, align: usize, source: S) -> Self {
-        debug_assert!(
-            align.is_power_of_two(),
-            "alignment value:{} is not a power of two.",
-            align
-        );
+    ///
+    /// Panics on invalid input; use [`Pool::try_with_source`] to handle
+    /// errors instead.
+    pub fn with_source(size: usize, align: usize, source: S) -> Self {
+        Self::try_with_source(size, align, source).unwrap_or_else(|err| err.panic())
+    }
+
+    /// Fallible pool construction with an explicit block source.
+    ///
+    /// Fails with [`AllocErr::InvalidAlignment`] when `align` is not a power
+    /// of two, when it exceeds the source page size (mappings cannot promise
+    /// wider absolute alignment), or when the source reports an unusable page
+    /// size. Fails with [`AllocErr::Overflow`] when the rounded slot size
+    /// overflows `usize` or `isize::MAX`.
+    pub fn try_with_source(size: usize, align: usize, source: S) -> Result<Self, AllocErr> {
+        if !align.is_power_of_two() {
+            return Err(AllocErr::InvalidAlignment);
+        }
+        let page_size = source.page_size();
+        if !page_size.is_power_of_two() {
+            // A zero or non power of two granularity means the source itself
+            // is misconfigured; growth math (`align_up`) requires powers of two.
+            return Err(AllocErr::InvalidAlignment);
+        }
+        if align > page_size {
+            // Mappings are only page aligned, so absolute alignment wider
+            // than a page cannot be promised for the first slot.
+            return Err(AllocErr::InvalidAlignment);
+        }
         let align = max(align, POINTER_ALIGN);
 
         let size = max(size, POINTER_SIZE);
-        let aligned_size =
-            Self::align_up(size, align).unwrap_or_else(|| AllocErr::Overflow.panic());
-        Self {
+        let aligned_size = Self::align_up(size, align).ok_or(AllocErr::Overflow)?;
+        if aligned_size > isize::MAX as usize {
+            return Err(AllocErr::Overflow);
+        }
+        Ok(Self {
             freelist: FreeList::dangling(),
             slot_size: aligned_size,
             slot_align: align,
