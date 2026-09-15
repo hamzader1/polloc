@@ -1,6 +1,6 @@
 # Polloc
 
-`polloc` is a high-performance fixed-size pool allocator written in Rust.
+`polloc` is a high-performance fixed size pool allocator written in Rust.
 
 It allocates memory in slots of one size and one alignment per pool. Freed slots
 are reused through an intrusive free list, and each block keeps a bitmap so the
@@ -23,7 +23,7 @@ pool.free(ptr);
 ```
 
 Fallible APIs exist for every panicking one (`try_new`, `try_alloc`,
-`try_free`), so out of memory and bad-pointer cases are recoverable without
+`try_free`), so out of memory and bad pointer cases are recoverable without
 unwinding:
 
 ```rust
@@ -234,7 +234,7 @@ path when the workload matches its design.
 
 ## Production Notes
 
-- Pointer validation is a runtime guarantee, not `debug_assert`-only: freeing
+- Pointer validation is a runtime guarantee, not `debug_assert` only: freeing
   an interior pointer returns `MisalignedFree` in release builds too, instead
   of corrupting the bitmap.
 - All allocator invariants are behind private fields; public access goes
@@ -244,7 +244,7 @@ path when the workload matches its design.
   page size) and reports size overflow as `AllocErr` instead of panicking.
 - Huge slots (larger than the default first block) grow the block to fit
   instead of panicking in the slow path.
-- The fast path never re-queries the OS for the page size and never touches
+- The fast path never re queries the OS for the page size and never touches
   the sentinel block; block geometry (`first`, `capacity`) is cached in the
   header.
 
@@ -254,7 +254,7 @@ path when the workload matches its design.
 - [x] Implement `alloc_uninit` / `alloc_value` (`alloc_one` / `alloc_val`).
 - [x] Add a typed free API that drops `T` before returning the slot.
 - [ ] Implement memory poisoning to help detect bugs such as double free,
-      use-after-free, and uninitialized assumptions during debug/testing.
+      use after free, and uninitialized assumptions during debug/testing.
 - [ ] Add more Miri coverage for typed allocation and invalid pointer cases.
 - [ ] Per block freelists so freeing never walks the block chain.
 - [ ] `no_std` support (remove the `Rc` marker dependency).
