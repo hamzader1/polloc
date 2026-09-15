@@ -557,20 +557,40 @@ impl<S: BlockSource> Pool<S> {
     /// active_block ---> new block ---> old block ---> EMPTY_BLOCK
     /// ```
     fn try_allocate_slow(&mut self) -> Result<*mut u8, AllocErr> {
-        let prev_size = unsafe { (*self.active_block).size() };
-        let aligned_size = {
-            match Self::align_up(prev_size, self.source.page_size()) {
-                Some(size) => size,
-                None => return Err(AllocErr::Overflow),
-            }
-        };
+        self.new_block(self.next_block_size()?)?;
+        self.try_allocate_fast().ok_or(AllocErr::OutOfMemory)
+    }
 
-        let new_block_size: usize = match prev_size.checked_mul(MUL_CONSTANT) {
-            Some(s) => s.max(aligned_size),
-            _ => aligned_size,
+    /// Computes the size of the next block to map.
+    ///
+    /// Growth doubles the previous block (rounded up to page granularity) but
+    /// is forced large enough to hold the header plus at least one slot, so
+    /// huge slot sizes grow the first block instead of panicking.
+    fn next_block_size(&self) -> Result<usize, AllocErr> {
+        let prev_size = unsafe { (*self.active_block).size };
+        let mut size = match prev_size.checked_mul(MUL_CONSTANT) {
+            Some(doubled) => {
+                doubled.max(Self::align_up(prev_size, self.page_size).ok_or(AllocErr::Overflow)?)
+            }
+            None => Self::align_up(prev_size, self.page_size).ok_or(AllocErr::Overflow)?,
         };
-        self.new_block(new_block_size)?;
-        Ok(self.try_allocate_fast().unwrap())
+        // The first block starts from the 1-byte sentinel, so growth alone
+        // already yields a page. The loop below only ever triggers when a
+        // single slot does not fit the growth candidate (huge slots).
+        loop {
+            let remaining = size
+                .checked_sub(size_of::<Block>())
+                .ok_or(AllocErr::Overflow)?;
+            let bitmap_size = BitMap::required_bytes(remaining, self.slot_size);
+            let header = self.header_for(bitmap_size)?;
+            let need = header
+                .checked_add(self.slot_size)
+                .ok_or(AllocErr::Overflow)?;
+            if need <= size {
+                return Ok(size);
+            }
+            size = Self::align_up(need, self.page_size).ok_or(AllocErr::Overflow)?;
+        }
     }
 
     /// Requests a block from the source and writes the `Block` header into it.
