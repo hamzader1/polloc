@@ -632,8 +632,7 @@ fn try_new_rejects_bad_alignment() {
 
 #[test]
 fn huge_slots_grow_the_first_block_instead_of_panicking() {
-    // Regression test: this used to panic on `Option::unwrap()` in the slow
-    // path because one 1 MiB slot never fit the default first block.
+    // A 1 MiB slot must fit in the first block.
     let mut pool = Pool::new(1 << 20, 8);
     assert_eq!(pool.num_blocks(), 0);
     let ptr = pool.try_alloc().expect("huge slot must map a fitting block");

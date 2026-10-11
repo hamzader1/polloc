@@ -30,14 +30,13 @@ pub enum AllocErr {
 }
 
 impl AllocErr {
-    /// Panics with a readable allocator error message.
     pub fn panic(self) -> ! {
         panic!("{}", self.to_string())
     }
 }
 #[allow(deprecated)]
 impl fmt::Display for AllocErr {
-    /// Formats the message used by the panicking APIs.
+    /// Formats the allocator error.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AllocErr::Overflow => {

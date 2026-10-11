@@ -163,11 +163,7 @@ impl EmptyBlockWrapper {
     }
 }
 impl Block {
-    /// Builds a block header value before it is written into mapped memory.
-    ///
-    /// Crate private: blocks only ever come from the pool's block source.
-    /// Eight fields (base, size, hwm, end, prev, first, capacity, bitmap) is
-    /// one over the default lint threshold, hence the allow below.
+    /// Creates a block header for a mapped memory region.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         base: *mut u8,
@@ -193,15 +189,13 @@ impl Block {
 }
 #[cfg(unix)]
 impl Pool<LibcBlockSource> {
-    /// Creates a pool using the block source backed by Unix libc calls.
-    ///
-    /// Panics on invalid alignment or size overflow; use [`Pool::try_new`]
-    /// for a fallible version.
+    /// Creates a pool using Unix memory mappings.
     pub fn new(size: usize, align: usize) -> Self {
         Self::with_source(size, align, LibcBlockSource)
     }
 
-    /// Fallible version of [`Pool::new`].
+    /// Creates a pool using Unix memory mappings and returns construction
+    /// errors.
     pub fn try_new(size: usize, align: usize) -> Result<Self, AllocErr> {
         Self::try_with_source(size, align, LibcBlockSource)
     }
@@ -209,40 +203,25 @@ impl Pool<LibcBlockSource> {
 
 #[cfg(windows)]
 impl Pool<WindowsBlockSource> {
-    /// Creates a pool using the Windows virtual memory block source.
-    ///
-    /// Panics on invalid alignment or size overflow; use [`Pool::try_new`]
-    /// for a fallible version.
+    /// Creates a pool using Windows virtual memory.
     pub fn new(size: usize, align: usize) -> Self {
         Self::with_source(size, align, WindowsBlockSource)
     }
 
-    /// Fallible version of [`Pool::new`].
+    /// Creates a pool using Windows virtual memory and returns construction
+    /// errors.
     pub fn try_new(size: usize, align: usize) -> Result<Self, AllocErr> {
         Self::try_with_source(size, align, WindowsBlockSource)
     }
 }
 
 impl<S: BlockSource> Pool<S> {
-    /// Creates a pool with an explicit block source.
-    ///
-    /// The public constructors choose a platform source. This function keeps
-    /// the allocator logic generic, which lets tests or future backends provide
-    /// memory without changing the allocation algorithm.
-    ///
-    /// Panics on invalid input; use [`Pool::try_with_source`] to handle
-    /// errors instead.
+    /// Creates a pool that uses `source` to obtain memory blocks.
     pub fn with_source(size: usize, align: usize, source: S) -> Self {
         Self::try_with_source(size, align, source).unwrap_or_else(|err| err.panic())
     }
 
-    /// Fallible pool construction with an explicit block source.
-    ///
-    /// Fails with [`AllocErr::InvalidAlignment`] when `align` is not a power
-    /// of two, when it exceeds the source page size (mappings cannot promise
-    /// wider absolute alignment), or when the source reports an unusable page
-    /// size. Fails with [`AllocErr::Overflow`] when the rounded slot size
-    /// overflows `usize` or `isize::MAX`.
+    /// Creates a pool that uses `source` to obtain memory blocks.
     pub fn try_with_source(size: usize, align: usize, source: S) -> Result<Self, AllocErr> {
         if !align.is_power_of_two() {
             return Err(AllocErr::InvalidAlignment);
@@ -335,10 +314,7 @@ impl<S: BlockSource> Pool<S> {
         self.live_slots == 0
     }
 
-    /// Checks whether `ptr` is a live, slot aligned allocation of this pool.
-    ///
-    /// This is a lookup helper for diagnostics and tests. It returns `false`
-    /// for freed slots, header/bitmap bytes, foreign pointers, and null.
+    /// Returns whether `ptr` is a live slot allocated by this pool.
     pub fn contains(&self, ptr: *mut u8) -> bool {
         if ptr.is_null() {
             return false;
@@ -359,17 +335,12 @@ impl<S: BlockSource> Pool<S> {
         false
     }
 
-    /// Allocates one raw slot and panics if allocation fails.
-    ///
-    /// The returned pointer owns `self.slot_size` bytes until it is returned
-    /// with `free`. Prefer [`Pool::try_alloc`] when out of memory is
-    /// recoverable.
+    /// Allocates one raw slot and returns its address.
     pub fn alloc(&mut self) -> *mut u8 {
         self.try_alloc().unwrap_or_else(|err| err.panic())
     }
 
-    /// Fallible raw allocation: reuse a freed slot or bump the active block,
-    /// mapping a new block only when both fast paths are exhausted.
+    /// Allocates one raw slot and returns an error if allocation fails.
     pub fn try_alloc(&mut self) -> Result<*mut u8, AllocErr> {
         if let Some(ptr) = self.try_allocate_fast() {
             Ok(ptr)
@@ -378,26 +349,7 @@ impl<S: BlockSource> Pool<S> {
         }
     }
 
-    /// Allocates one slot and constructs a `T` inside it.
-    ///
-    /// The value is only written after a guard has been installed. If `f` (the closure)
-    /// panics while building the value, the guard returns the raw slot to the
-    /// pool instead of leaking it.
-    ///
-    /// ```text
-    /// allocate raw slot
-    ///       |
-    ///       v
-    /// +────────────+
-    /// | PoolGuard  |  if construction panics, Drop frees the slot
-    /// +────────────+
-    ///       |
-    ///       v
-    /// write T into slot
-    ///       |
-    ///       v
-    /// commit guard and return *mut T
-    /// ```
+    /// Allocates a slot, calls `f` to create a `T`, and returns its address.
     pub fn try_allocate_with<T, F>(&mut self, f: F) -> Result<*mut T, AllocErr>
     where
         F: FnOnce() -> T,
@@ -406,19 +358,14 @@ impl<S: BlockSource> Pool<S> {
         Ok((self.try_emplace()?).write(f()))
     }
 
-    /// Allocates a slot and moves `value` into it, returning an owning handle.
-    ///
-    /// The [`Slot`] dereferences to `T` and automatically drops `T` and frees
-    /// the slot when it goes out of scope. It prevents accidental use after
-    /// free, though a caller can intentionally keep it alive with
-    /// `mem::forget`. Panics on failure; use [`Pool::try_alloc_value`] to
-    /// handle errors.
+    /// Allocates a slot, stores `value`, and returns a handle.
+    /// The handle drops `value` and frees the slot when dropped.
     pub fn alloc_value<T>(&mut self, value: T) -> Slot<'_, T, S> {
         self.try_alloc_value(value)
             .unwrap_or_else(|err| err.panic())
     }
 
-    /// Fallible version of [`Pool::alloc_value`].
+    /// Allocates and initializes a slot, returning an owning handle.
     pub fn try_alloc_value<T>(&mut self, value: T) -> Result<Slot<'_, T, S>, AllocErr> {
         self.validate_size_align::<T>()?;
         let ptr = self.try_alloc()? as *mut T;
@@ -428,27 +375,19 @@ impl<S: BlockSource> Pool<S> {
         Ok(Slot::new(self, ptr))
     }
 
-    /// Reserves an uninitialized slot for `T`, returning an owning handle.
-    ///
-    /// Finish initialization with [`Slot::write`], which converts the handle
-    /// into `Slot<T>` without touching the pool again. Panics on failure;
-    /// use [`Pool::try_alloc_uninit`] for the fallible version.
+    /// Reserves an uninitialized slot for `T`.
     pub fn alloc_uninit<T>(&mut self) -> Slot<'_, MaybeUninit<T>, S> {
         self.try_alloc_uninit().unwrap_or_else(|err| err.panic())
     }
 
-    /// Fallible version of [`Pool::alloc_uninit`].
+    /// Reserves an uninitialized slot for `T` and returns an owning handle.
     pub fn try_alloc_uninit<T>(&mut self) -> Result<Slot<'_, MaybeUninit<T>, S>, AllocErr> {
         self.validate_size_align::<T>()?;
         let ptr = self.try_alloc()? as *mut MaybeUninit<T>;
         Ok(Slot::new(self, ptr))
     }
 
-    /// Frees a slot previously leaked via [`Slot::into_raw`], dropping `T`.
-    ///
-    /// Runs the destructor of the value in place, then returns the slot to
-    /// the pool. Panics on invalid pointers; use [`Pool::try_free_value`]
-    /// for a fallible version.
+    /// Drops `T` and frees its slot.
     ///
     /// # Safety
     ///
@@ -461,7 +400,7 @@ impl<S: BlockSource> Pool<S> {
         unsafe { self.try_free_value(ptr) }.unwrap_or_else(|err| err.panic())
     }
 
-    /// Fallible version of [`Pool::free_value`].
+    /// Drops `T`, frees its slot, and reports invalid pointers.
     ///
     /// # Safety
     ///
@@ -478,11 +417,7 @@ impl<S: BlockSource> Pool<S> {
         self.try_free(ptr as *mut u8)
     }
 
-    /// Allocates a raw slot and wraps it in an emplacement guard.
-    ///
-    /// This is private because callers should use `try_allocate_with`, which
-    /// performs the size and alignment validation before exposing the typed
-    /// pointer.
+    /// Allocates a slot and guards it until initialization completes.
     fn try_emplace<'a, T>(&'a mut self) -> Result<Emplace<'a, S, T>, AllocErr> {
         let ptr = self.try_alloc()?;
         let guard = PoolGuard::with_source(self, ptr);
@@ -572,9 +507,8 @@ impl<S: BlockSource> Pool<S> {
 
     /// Computes the size of the next block to map.
     ///
-    /// Growth doubles the previous block (rounded up to page granularity) but
-    /// is forced large enough to hold the header plus at least one slot, so
-    /// huge slot sizes grow the first block instead of panicking.
+    /// Doubles the previous block size, rounds it to the page size, and
+    /// ensures it can hold the header and one slot.
     fn next_block_size(&self) -> Result<usize, AllocErr> {
         let prev_size = unsafe { (*self.active_block).size };
         let mut size = match prev_size.checked_mul(MUL_CONSTANT) {
@@ -717,9 +651,7 @@ impl<S: BlockSource> Pool<S> {
     ///             ptr ─> index 2
     /// ```
     ///
-    /// Unlike the old assertion that ran only in debug builds, misalignment and out of range
-    /// indices are runtime errors in every build profile, so release builds
-    /// can never turn a bad free into bitmap writes outside the valid range.
+    /// Returns the slot index if `ptr` is aligned and inside `block`.
     fn try_slot_index(&self, ptr: *mut u8, block: &Block) -> Result<usize, AllocErr> {
         let first = block.first as usize;
         let offset = (ptr as usize).wrapping_sub(first);
@@ -733,7 +665,7 @@ impl<S: BlockSource> Pool<S> {
         Ok(idx)
     }
 
-    /// Frees a raw slot and panics if the pointer is invalid.
+    /// Frees a raw slot previously allocated from this pool.
     pub fn free(&mut self, ptr: *mut u8) {
         self.try_free(ptr).unwrap_or_else(|err| err.panic());
     }

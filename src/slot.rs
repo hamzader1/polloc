@@ -93,12 +93,6 @@ impl<T: fmt::Debug, S: BlockSource> fmt::Debug for Slot<'_, T, S> {
 
 impl<T, S: BlockSource> Drop for Slot<'_, T, S> {
     /// Drops the value in place, then returns the slot to the pool.
-    ///
-    /// The free cannot fail for a handle minted by this pool: the slot is
-    /// live and correctly aligned by construction. A failure would mean pool
-    /// memory was corrupted through raw pointer misuse elsewhere, so debug
-    /// builds assert loudly while release builds avoid a double panic during
-    /// unwinding.
     fn drop(&mut self) {
         unsafe {
             self.ptr.drop_in_place();
