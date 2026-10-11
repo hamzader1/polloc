@@ -11,18 +11,18 @@ use std::mem::MaybeUninit;
 /// raw slot (*mut u8)
 ///      |
 ///      v
-/// +------------------+
+/// +──────────────────+
 /// | MaybeUninit<T>   |
-/// +------------------+
+/// +──────────────────+
 ///      |
 ///      | write(value)
 ///      v
-/// +------------------+
+/// +──────────────────+
 /// | initialized T    |
-/// +------------------+
+/// +──────────────────+
 /// ```
 ///
-/// The type is crate-private because callers use `Pool::try_allocate_with`
+/// The type is private to the crate because callers use `Pool::try_allocate_with`
 /// instead of manually driving the guard protocol.
 pub(crate) struct Emplace<'a, S: BlockSource, T> {
     /// Guard that frees the slot unless initialization commits.

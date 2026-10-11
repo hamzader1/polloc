@@ -3,7 +3,7 @@ use super::Pool;
 /// Number of allocation slots represented by one bitmap byte.
 pub const BITS_PER_BYTE: usize = 8;
 
-/// Compact allocation-state table for the slots inside one block.
+/// Compact allocation state table for the slots inside one block.
 ///
 /// Each bit describes one slot:
 ///
@@ -12,9 +12,9 @@ pub const BITS_PER_BYTE: usize = 8;
 /// bit = 1  slot is allocated
 ///
 /// byte 0
-/// +---+---+---+---+---+---+---+---+
+/// +───+───+───+───+───+───+───+───+
 /// | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
-/// +---+---+---+---+---+---+---+---+
+/// +───+───+───+───+───+───+───+───+
 ///                         ^       ^
 ///                         |       |
 ///                        slot 2  slot 0

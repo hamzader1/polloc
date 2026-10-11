@@ -2,7 +2,7 @@ use crate::{BlockSource, Pool};
 
 /// RAII guard for an allocated slot that has not been committed yet.
 ///
-/// This guard exists to make typed allocation panic-safe. The pool first
+/// This guard makes typed allocation safe if construction panics. The pool first
 /// allocates a raw slot, then constructs the user's value. If construction
 /// panics before `commit`, `Drop` returns the slot to the pool.
 ///
@@ -10,13 +10,13 @@ use crate::{BlockSource, Pool};
 /// raw slot allocated
 ///      |
 ///      v
-/// +-----------+
+/// +───────────+
 /// | PoolGuard |
-/// +-----------+
+/// +───────────+
 ///      |
-///      +-- commit() called --> keep allocation
+///      +── commit() called ──> keep allocation
 ///      |
-///      +-- dropped uncommitted --> free slot
+///      +── dropped uncommitted ──> free slot
 /// ```
 pub(crate) struct PoolGuard<'a, S: BlockSource> {
     /// Pool that owns the guarded slot.

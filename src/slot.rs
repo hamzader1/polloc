@@ -14,10 +14,10 @@ use core::ptr::NonNull;
 /// whole lifetime, the borrow checker guarantees:
 ///
 /// ```text
-/// Pool --mut borrow--> Slot<T> --deref--> T
+/// Pool ──mut borrow──> Slot<T> ──deref──> T
 ///   ^                                          |
 ///   |           Drop: drop(T) + Pool.free()    |
-///   +------------------------------------------+
+///   +──────────────────────────────────────────+
 /// ```
 ///
 /// * the pool outlives every outstanding slot,

@@ -473,9 +473,8 @@ fn free_in_permutation_then_reallocate_all_same_addresses() {
 
 #[test]
 fn foreign_pointer_from_different_pool_panics() {
-    // catches the case where get_block's containment check might accidentally
-    // succeed against the WRONG pool's chunk chain if pools happen to share
-    // nearby address ranges
+    // Ensure a pointer from another pool is rejected, even if their address
+    // ranges happen to be close together.
     let mut pool_a = Pool::new(64, 16);
     let mut pool_b = Pool::new(64, 16);
     let ptr_from_b = pool_b.alloc();
@@ -485,9 +484,7 @@ fn foreign_pointer_from_different_pool_panics() {
 
 #[test]
 fn free_pointer_just_before_slots_start_panics() {
-    // catches off-by-one in the containment/alignment check right at the
-    // header+bitmap boundary — a pointer that's IN the mapped region but
-    // NOT a valid slot (lands inside header/bitmap area)
+    // The block base is inside the mapping but does not point to a slot.
     let mut pool = Pool::new(64, 16);
     let ptr = pool.alloc();
     let block_base = unsafe { (*pool.active_block).base };
@@ -499,7 +496,7 @@ fn free_pointer_just_before_slots_start_panics() {
 
 #[test]
 fn free_pointer_at_exact_block_end_panics() {
-    // one-past-the-end pointer — should never be treated as valid
+    // The address at the end of the mapping is outside the block.
     let mut pool = Pool::new(64, 16);
     let ptr = pool.alloc();
     let block_end = unsafe { (*pool.active_block).base.add((*pool.active_block).size) };
@@ -509,9 +506,7 @@ fn free_pointer_at_exact_block_end_panics() {
 
 #[test]
 fn alloc_free_alloc_same_slot_immediately_reuses_correctly() {
-    // tightest possible alloc/free cycle on ONE slot repeatedly — stresses
-    // the bitmap flip + freelist push/pop path without any other slots
-    // to hide a bug behind
+    // Repeatedly reuse one slot to exercise the bitmap and free list.
     let mut pool = Pool::new(32, 8);
     let first = pool.alloc();
     for i in 0..n(10000, 200) {
@@ -526,8 +521,7 @@ fn alloc_free_alloc_same_slot_immediately_reuses_correctly() {
 
 #[test]
 fn bitmap_survives_exact_multiple_of_8_slot_counts() {
-    // boundary test: bitmap byte-packing edge cases at exactly 8, 16, 24...
-    // slot counts, where every bit in a byte gets used with no partial byte
+    // Check counts around bitmap byte boundaries, including full bytes.
     for &count in &[7usize, 8, 9, 15, 16, 17, 63, 64, 65] {
         let mut pool = Pool::new(16, 8);
         let mut ptrs = Vec::new();
@@ -547,8 +541,7 @@ fn bitmap_survives_exact_multiple_of_8_slot_counts() {
 
 #[test]
 fn max_alignment_slot_size_relationship_holds_under_growth() {
-    // large alignment forces bigger slot_size padding — verify this still
-    // holds correctly after the pool grows past its first block
+    // Check slot alignment after the pool grows beyond its first block.
     let mut pool = Pool::new(100, 128);
     let mut ptrs = Vec::new();
     for i in 0..n(200, 24) {
@@ -567,9 +560,7 @@ fn max_alignment_slot_size_relationship_holds_under_growth() {
 
 #[test]
 fn interleaved_alloc_free_across_block_boundary() {
-    // specifically targets the moment a NEW block is created while OLD
-    // block still has live (non-freed) allocations mixed with freed ones —
-    // stresses whether free-list/bitmap correctly distinguish blocks
+    // Keep live and freed slots in the old block while a new block is added.
     let mut pool = Pool::new(64, 16);
     let mut live = Vec::new();
     for i in 0..n(64, 16) {
@@ -591,8 +582,7 @@ fn interleaved_alloc_free_across_block_boundary() {
 
 #[test]
 fn drop_with_live_allocations_does_not_leak_or_crash() {
-    // Drop must succeed even if the caller never freed everything —
-    // this is the arena-style "leak is fine, crash is not" contract
+    // Dropping the pool releases its blocks, even when slots remain live.
     let mut pool = Pool::new(48, 16);
     for i in 0..n(512, 64) {
         let ptr = pool.alloc();
@@ -603,7 +593,7 @@ fn drop_with_live_allocations_does_not_leak_or_crash() {
 
 #[test]
 fn drop_stress_many_pools_created_and_dropped() {
-    // leak detector via volume — mirrors your Arena's equivalent test
+    // Repeatedly create and drop pools to catch resource leaks.
     for _ in 0..n(2000, 100) {
         let mut pool = Pool::new(64, 16);
         for _ in 0..8 {
@@ -613,14 +603,12 @@ fn drop_stress_many_pools_created_and_dropped() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Production-hardening tests for the 0.2 API surface.
-// ---------------------------------------------------------------------------
+// Tests for the 0.2 API.
 
 #[test]
 fn try_new_rejects_bad_alignment() {
     use std::mem::{align_of, size_of};
-    // Zero and non-power-of-two alignments are never valid.
+    // Zero and alignments that are not powers of two are invalid.
     for bad in [0usize, 3, 6, 12, 24, 100] {
         assert!(matches!(
             Pool::try_new(8, bad),

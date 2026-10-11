@@ -38,7 +38,7 @@ pub type DefaultBlockSource = LibcBlockSource;
 #[cfg(windows)]
 pub type DefaultBlockSource = WindowsBlockSource;
 
-/// Fixed-size slot allocator backed by one or more mapped blocks.
+/// Fixed size slot allocator backed by one or more mapped blocks.
 ///
 /// A `Pool` serves allocations of exactly one slot size. Requests are rounded
 /// up when the pool is created, so every returned pointer has enough room for
@@ -52,18 +52,18 @@ pub type DefaultBlockSource = WindowsBlockSource;
 /// freelist.head
 ///      |
 ///      v
-/// +---------+      +---------+
-/// | next ---+----> | null    |
-/// +---------+      +---------+
+/// +─────────+      +─────────+
+/// | next ───+────> | null    |
+/// +─────────+      +─────────+
 ///
-/// 2. Bump the active block high-water mark.
+/// 2. Advance the active block's high water mark.
 ///
 ///                      hwm       end
 ///                       |         |
 ///                       v         v
-/// +--------+--------+---+---------+
+/// +────────+────────+───+─────────+
 /// | header | bitmap | A |  free   |
-/// +--------+--------+---+---------+
+/// +────────+────────+───+─────────+
 ///                      ^
 ///                      new allocation
 /// ```
@@ -71,7 +71,7 @@ pub type DefaultBlockSource = WindowsBlockSource;
 /// If neither path can provide a slot, the pool maps a larger block and makes
 /// that block the new active block.
 ///
-/// `Pool` is intentionally single-threaded: it is `!Send` and `!Sync`.
+/// `Pool` is intentionally single threaded: it is `!Send` and `!Sync`.
 /// Share it across threads only behind a lock (e.g. `Mutex<Pool>`) owned by
 /// your own wrapper.
 #[derive(Debug)]
@@ -82,11 +82,11 @@ pub struct Pool<S: BlockSource = DefaultBlockSource> {
     slot_size: usize,
     /// Alignment promised for every slot returned by this pool.
     slot_align: usize,
-    /// Most recent block. New high-water allocations come from this block.
+    /// Most recent block. New high water allocations come from this block.
     active_block: *mut Block,
     /// Backend used to map and unmap raw memory blocks.
     source: S,
-    /// Cached platform granularity, so growth never re-queries the OS.
+    /// Cached platform granularity, so growth does not query the OS again.
     page_size: usize,
     /// Number of slots currently handed out and not yet freed.
     live_slots: usize,
@@ -102,9 +102,9 @@ pub struct Pool<S: BlockSource = DefaultBlockSource> {
 /// base
 ///  |
 ///  v
-/// +--------+--------+-----+-----+-----+---------+
+/// +────────+────────+─────+─────+─────+─────────+
 /// | Block  | bitmap |  A  |  B  |  C  |  free   |
-/// +--------+--------+-----+-----+-----+---------+
+/// +────────+────────+─────+─────+─────+─────────+
 /// ^                 ^                 ^         ^
 /// |                 |                 |         |
 /// base              first slot        hwm       end
@@ -120,9 +120,9 @@ pub struct Block {
     base: *mut u8,
     /// Total mapped block size in bytes.
     size: usize,
-    /// High-water mark: the first never-allocated byte in the slot area.
+    /// High water mark: the first byte in the slot area that has not been allocated.
     hwm: *mut u8,
-    /// One-past-the-end address of this mapped block.
+    /// Address just beyond the end of this mapped block.
     end: *mut u8,
     /// Previous block in the pool's block chain.
     prev: *mut Block,
@@ -130,7 +130,7 @@ pub struct Block {
     first: *mut u8,
     /// Number of slots that fit between `first` and `end`.
     capacity: usize,
-    /// Allocation-state bitmap for slots in this block.
+    /// Bitmap that tracks which slots in this block are allocated.
     bitmap: BitMap,
 }
 
@@ -140,7 +140,7 @@ pub struct Block {
 /// marker for the block linked list:
 ///
 /// ```text
-/// active_block ---> block 3 ---> block 2 ---> block 1 ---> EMPTY_BLOCK
+/// active_block ───> block 3 ───> block 2 ───> block 1 ───> EMPTY_BLOCK
 /// ```
 struct EmptyBlockWrapper(Block);
 
@@ -193,7 +193,7 @@ impl Block {
 }
 #[cfg(unix)]
 impl Pool<LibcBlockSource> {
-    /// Creates a pool using the Unix libc-backed block source.
+    /// Creates a pool using the block source backed by Unix libc calls.
     ///
     /// Panics on invalid alignment or size overflow; use [`Pool::try_new`]
     /// for a fallible version.
@@ -209,7 +209,7 @@ impl Pool<LibcBlockSource> {
 
 #[cfg(windows)]
 impl Pool<WindowsBlockSource> {
-    /// Creates a pool using the Windows virtual-memory block source.
+    /// Creates a pool using the Windows virtual memory block source.
     ///
     /// Panics on invalid alignment or size overflow; use [`Pool::try_new`]
     /// for a fallible version.
@@ -388,9 +388,9 @@ impl<S: BlockSource> Pool<S> {
     /// allocate raw slot
     ///       |
     ///       v
-    /// +------------+
+    /// +────────────+
     /// | PoolGuard  |  if construction panics, Drop frees the slot
-    /// +------------+
+    /// +────────────+
     ///       |
     ///       v
     /// write T into slot
@@ -409,10 +409,10 @@ impl<S: BlockSource> Pool<S> {
     /// Allocates a slot and moves `value` into it, returning an owning handle.
     ///
     /// The [`Slot`] dereferences to `T` and automatically drops `T` and frees
-    /// the slot when it goes out of scope. This is the preferred safe API:
-    /// unlike raw [`Pool::alloc`], it cannot leak or use-after-free by
-    /// accident. Panics on failure; use [`Pool::try_alloc_value`] to handle
-    /// errors.
+    /// the slot when it goes out of scope. It prevents accidental use after
+    /// free, though a caller can intentionally keep it alive with
+    /// `mem::forget`. Panics on failure; use [`Pool::try_alloc_value`] to
+    /// handle errors.
     pub fn alloc_value<T>(&mut self, value: T) -> Slot<'_, T, S> {
         self.try_alloc_value(value)
             .unwrap_or_else(|err| err.panic())
@@ -492,7 +492,7 @@ impl<S: BlockSource> Pool<S> {
     /// Attempts allocation without mapping a new block.
     ///
     /// The fast path first reuses a freed slot. If the freelist is empty, it
-    /// bumps the active block's high-water mark.
+    /// advances the active block's high water mark.
     ///
     /// ```text
     /// active block
@@ -500,9 +500,9 @@ impl<S: BlockSource> Pool<S> {
     ///                    hwm       end
     ///                     |         |
     ///                     v         v
-    /// +--------+--------+---+---+---+---------+
+    /// +────────+────────+───+───+───+─────────+
     /// | header | bitmap | A | B | C |  free   |
-    /// +--------+--------+---+---+---+---------+
+    /// +────────+────────+───+───+───+─────────+
     ///                    ^
     ///                    next slot if freelist is empty
     /// ```
@@ -559,11 +559,11 @@ impl<S: BlockSource> Pool<S> {
     /// ```text
     /// before:
     ///
-    /// active_block ---> old block ---> EMPTY_BLOCK
+    /// active_block ───> old block ───> EMPTY_BLOCK
     ///
     /// after:
     ///
-    /// active_block ---> new block ---> old block ---> EMPTY_BLOCK
+    /// active_block ───> new block ───> old block ───> EMPTY_BLOCK
     /// ```
     fn try_allocate_slow(&mut self) -> Result<*mut u8, AllocErr> {
         self.new_block(self.next_block_size()?)?;
@@ -583,7 +583,7 @@ impl<S: BlockSource> Pool<S> {
             }
             None => Self::align_up(prev_size, self.page_size).ok_or(AllocErr::Overflow)?,
         };
-        // The first block starts from the 1-byte sentinel, so growth alone
+        // The first block starts from a one byte sentinel, so growth alone
         // already yields a page. The loop below only ever triggers when a
         // single slot does not fit the growth candidate (huge slots).
         loop {
@@ -612,9 +612,9 @@ impl<S: BlockSource> Pool<S> {
     /// ptr/base
     ///  |
     ///  v
-    /// +--------+----------+---------+---------+
+    /// +────────+──────────+─────────+─────────+
     /// | Block  | bitmap   | padding | slots   |
-    /// +--------+----------+---------+---------+
+    /// +────────+──────────+─────────+─────────+
     /// ^                              ^
     /// |                              |
     /// base                           hwm starts here
@@ -685,7 +685,7 @@ impl<S: BlockSource> Pool<S> {
     /// reports `InvalidPointer`.
     ///
     /// ```text
-    /// active ---> block C ---> block B ---> block A ---> EMPTY
+    /// active ───> block C ───> block B ───> block A ───> EMPTY
     ///              check        check        check
     /// ```
     fn get_block(&self, ptr: *mut u8) -> *mut Block {
@@ -710,16 +710,16 @@ impl<S: BlockSource> Pool<S> {
     /// first slot
     ///    |
     ///    v
-    /// +-----+-----+-----+-----+
+    /// +─────+─────+─────+─────+
     /// |  0  |  1  |  2  |  3  |
-    /// +-----+-----+-----+-----+
+    /// +─────+─────+─────+─────+
     ///             ^
-    ///             ptr -> index 2
+    ///             ptr ─> index 2
     /// ```
     ///
-    /// Unlike the old debug-only assertion, misalignment and out-of-range
+    /// Unlike the old assertion that ran only in debug builds, misalignment and out of range
     /// indices are runtime errors in every build profile, so release builds
-    /// can never turn a bad free into out-of-bounds bitmap writes.
+    /// can never turn a bad free into bitmap writes outside the valid range.
     fn try_slot_index(&self, ptr: *mut u8, block: &Block) -> Result<usize, AllocErr> {
         let first = block.first as usize;
         let offset = (ptr as usize).wrapping_sub(first);
@@ -774,10 +774,10 @@ impl<S: BlockSource> Pool<S> {
 
     /// Drops all allocations at once without unmapping any blocks.
     ///
-    /// Bitmaps are cleared, high-water marks rewind, the freelist is emptied,
+    /// Bitmaps are cleared, high water marks rewind, the free list is emptied,
     /// and the live count returns to zero. Mapped blocks are kept, so
     /// refilling the pool after `reset` reuses warm memory instead of asking
-    /// the OS again. This is the arena-style bulk-reuse entry point.
+    /// the OS again. Use this method to reuse the pool in bulk.
     pub fn reset(&mut self) {
         self.freelist.clear();
         let mut current = self.active_block;
@@ -801,7 +801,7 @@ impl<S: BlockSource> Pool<S> {
         Ok(())
     }
 
-    /// Releases fully-free non-active blocks back to the block source.
+    /// Releases fully free blocks that are not active back to the block source.
     ///
     /// A block is releasable only when every bitmap bit is clear, which means
     /// none of its slots are live. Freed slots of released blocks are pruned

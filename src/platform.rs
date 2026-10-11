@@ -29,7 +29,7 @@ const FD: c_int = -1;
 #[cfg(unix)]
 const OFFSET: off_t = 0;
 
-/// Block source backed by libc virtual-memory calls on Unix.
+/// Block source backed by libc virtual memory calls on Unix.
 ///
 /// The allocator asks this source for raw pages. The returned memory is not
 /// initialized by Rust; the pool writes its own `Block` header and bitmap into
@@ -75,9 +75,9 @@ impl BlockSource for LibcBlockSource {
 /// VirtualAlloc
 ///    |
 ///    v
-/// +-----------------------------+
+/// +─────────────────────────────+
 /// | committed read/write memory |
-/// +-----------------------------+
+/// +─────────────────────────────+
 /// ```
 #[cfg(windows)]
 pub struct WindowsBlockSource;

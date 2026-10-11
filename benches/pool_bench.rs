@@ -1,7 +1,7 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use polloc::Pool;
 
-/// Hot-slot fast path: same slot reused, everything warm in cache.
+/// Fast path benchmark that repeatedly reuses one slot already in cache.
 fn bench_hot(c: &mut Criterion) {
     c.bench_function("pool alloc/free 64B hot", |b| {
         let mut pool = Pool::new(64, 8);
@@ -54,7 +54,7 @@ fn bench_churn(c: &mut Criterion) {
     });
 }
 
-/// Safe typed API: Slot construction, deref, and drop-with-destructor.
+/// Safe typed API benchmark covering slot creation, access, and destruction.
 fn bench_typed(c: &mut Criterion) {
     c.bench_function("pool Slot<u64> alloc/drop", |b| {
         let mut pool = Pool::new(size_of::<u64>(), align_of::<u64>());

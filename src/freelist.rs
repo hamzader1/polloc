@@ -9,20 +9,20 @@ use super::Pool;
 /// freelist.head
 ///      |
 ///      v
-/// +---------+      +---------+      +---------+
-/// | next ---+----> | next ---+----> | null    |
+/// +─────────+      +─────────+      +─────────+
+/// | next ───+────> | next ───+────> | null    |
 /// | slot    |      | slot    |      |         |
-/// +---------+      +---------+      +---------+
+/// +─────────+      +─────────+      +─────────+
 ///   slot C          slot B          slot A
 ///
 /// alloc reuses slot C first, so reuse order is LIFO.
 /// ```
 ///
-/// A slot must be at least pointer-sized before it can enter the freelist.
+/// A slot must be at least the size of a pointer before it can enter the free list.
 /// `Pool::new` enforces that by rounding every slot size up to pointer size.
 #[derive(Debug)]
 pub struct FreeList {
-    /// Top of the free-slot stack.
+    /// Top of the stack of free slots.
     head: *mut u8,
 }
 impl FreeList {
@@ -50,20 +50,20 @@ impl FreeList {
     /// head
     ///  |
     ///  v
-    /// +------+     +------+
-    /// | next +---> | next |
-    /// +------+     +------+
+    /// +──────+     +──────+
+    /// | next +───> | next |
+    /// +──────+     +──────+
     ///
     /// after pop:
     ///
     /// returned slot
     ///  |
     ///  v
-    /// +------+
+    /// +──────+
     /// | next |
-    /// +------+
+    /// +──────+
     ///
-    /// head --------> second slot
+    /// head ────────> second slot
     /// ```
     pub fn get_slot(&mut self) -> Option<*mut u8> {
         if !self.is_null() {
@@ -90,19 +90,19 @@ impl FreeList {
     /// ```text
     /// before:
     ///
-    /// head ----> old first
+    /// head ────> old first
     ///
     /// add_slot(new)
     ///
     /// new slot stores old head:
     ///
-    /// +-----------+
-    /// | old head -+----> old first
-    /// +-----------+
+    /// +───────────+
+    /// | old head ─+────> old first
+    /// +───────────+
     ///
     /// after:
     ///
-    /// head ----> new slot ----> old first
+    /// head ────> new slot ────> old first
     /// ```
     pub fn add_slot(&mut self, ptr: *mut u8) {
         unsafe {
