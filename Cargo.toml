@@ -1,11 +1,18 @@
 [package]
 name = "polloc"
 version = "0.2.0"
+description = "A fixed size pool allocator with safe typed slots and reusable memory blocks"
 edition = "2024"
+autobins = false
+license = "MIT"
+repository = "https://github.com/hamzader1/polloc"
+readme = "README.md"
+keywords = ["allocator", "memory", "pool", "slab", "arena"]
+categories = ["memory-management"]
 
 [dependencies]
 libc = "0.2.186"
-rand = "0.10.2"
+
 [dev-dependencies]
 criterion = "0.5"
 
