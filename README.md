@@ -52,7 +52,7 @@ let mut pool = Pool::new(size_of::<String>(), align_of::<String>());
     let mut hello = pool.alloc_value(String::from("hello"));
     hello.push_str(" world");
     assert_eq!(&*hello, "hello world");
-} // `String` dropped, slot freed here — no manual `free` needed.
+} // `String` is dropped and its slot is freed here.
 
 assert!(pool.is_empty());
 ```
